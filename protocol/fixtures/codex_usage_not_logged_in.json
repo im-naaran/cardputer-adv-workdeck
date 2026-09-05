@@ -1,0 +1,10 @@
+{
+  "event": "response",
+  "actionId": "codex.usage.read",
+  "execId": "4f72a01c9e8b36d1",
+  "result": {
+    "code": "NOT_LOGGED_IN",
+    "msg": "Codex login required",
+    "data": null
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "event": "response",
+  "actionId": "codex.usage.read",
+  "execId": "4f72a01c9e8b36d1",
+  "result": {
+    "code": "OK",
+    "msg": "usage loaded",
+    "data": {
+      "fetchedAtEpochSeconds": 1788436800,
+      "windows": [
+        {
+          "limitId": "codex",
+          "limitName": null,
+          "windowKind": "primary",
+          "usedPercent": 42,
+          "windowDurationMins": 300,
+          "resetsAtEpochSeconds": 1788444000
+        }
+      ]
+    }
+  }
+}

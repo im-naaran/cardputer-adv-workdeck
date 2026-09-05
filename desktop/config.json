@@ -1,0 +1,19 @@
+{
+  "configVersion": 1,
+  "settings": {
+    "codex": {
+      "requestTimeoutSeconds": 15
+    }
+  },
+  "actions": [
+    {
+      "type": "codex",
+      "actionId": "codex.usage.read",
+      "name": "Codex usage",
+      "key": null,
+      "enabled": true,
+      "content": "usage",
+      "params": {}
+    }
+  ]
+}

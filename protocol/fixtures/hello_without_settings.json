@@ -1,0 +1,17 @@
+{
+  "event": "response",
+  "actionId": "system.hello",
+  "execId": "8f21c7a0d1524e31",
+  "result": {
+    "code": "OK",
+    "msg": "session ready",
+    "data": {
+      "protocolVersion": 1,
+      "computerId": "local-stable-id",
+      "computerName": "Naaran Mac",
+      "capabilities": [
+        "codex.usage.read"
+      ]
+    }
+  }
+}

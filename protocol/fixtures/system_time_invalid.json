@@ -1,0 +1,1 @@
+{"event":"response","actionId":"system.time.read","execId":"0000000000000001","result":{"code":"OK","msg":"time loaded","data":{"epochMilliseconds":true,"utcOffsetMinutes":480}}}

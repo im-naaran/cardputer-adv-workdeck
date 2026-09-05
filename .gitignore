@@ -1,0 +1,30 @@
+# Operating system
+.DS_Store
+Thumbs.db
+
+# Local environment and secrets
+.env
+.env.*
+!.env.example
+.venv/
+
+# Python caches, reports, and package output
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.mypy_cache/
+.pyright/
+.ruff_cache/
+*.egg-info/
+dist/
+build/
+
+# PlatformIO output
+.pio/
+
+# Editor-local configuration
+.vscode/
