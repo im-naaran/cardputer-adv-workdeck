@@ -8,6 +8,8 @@ from typing import Any, Protocol
 
 from adv_helper.application.codex_module import CodexModule
 from adv_helper.application.time_module import TimeModule
+from adv_helper.application.script_module import ScriptModule
+from adv_helper.os_adapters.script_runner import ScriptRunner
 from adv_helper.config import AppConfig
 from adv_helper.core.framing import FrameError, JsonlBuffer
 from adv_helper.core.messages import (
@@ -20,7 +22,8 @@ from adv_helper.core.messages import (
     decode_message,
     encode_message,
 )
-from adv_helper.core.protocol_constants import ACTION_SYSTEM_TIME_READ, PROTOCOL_VERSION
+from adv_helper.core.protocol_constants import (ACTION_SYSTEM_TIME_READ, PROTOCOL_VERSION,
+    ACTION_ACTIONS_LIST, ACTION_SCRIPTS_EXECUTE, ACTION_SHORTCUT_EXECUTE)
 from adv_helper.core.registry import ActionRegistry
 from adv_helper.core.session import ConnectionSession
 from adv_helper.os_adapters.codex_app_server import CodexAppServerClient, RateLimitProvider
@@ -41,12 +44,16 @@ class ModuleManager:
         self._diagnostics = diagnostics
 
     def enable(self, action_id: str, factory: Callable[[], Any]) -> None:
+        self.enable_group((action_id,), factory)
+
+    def enable_group(self, action_ids: tuple[str, ...], factory: Callable[[], Any]) -> None:
         try:
             module = factory()
-            self._registry.register(action_id, module.handle)
+            for action_id in action_ids:
+                self._registry.register(action_id, module.handle)
         except Exception as error:
             # Module startup failure is isolated so BLE and local diagnostics stay available.
-            self._diagnostics.error("module initialization failed", actionId=action_id, errorType=type(error).__name__)
+            self._diagnostics.error("module initialization failed", actionIds=action_ids, errorType=type(error).__name__)
 
 
 class DesktopApplication:
@@ -123,19 +130,21 @@ class DesktopApplication:
             actionId=message.action_id,
             execId=message.exec_id,
         )
-        if not self.connection_session.begin_request(message.exec_id):
-            response = ResponseMessage(
-                "response",
-                message.action_id,
-                message.exec_id,
-                Result("BUSY", "request already active", None),
-            )
-        else:
-            try:
+        owns_request = self.connection_session.begin_request(message.exec_id)
+        try:
+            if not owns_request:
+                response = ResponseMessage(
+                    "response", message.action_id, message.exec_id,
+                    Result("BUSY", "request already active", None),
+                )
+            else:
                 response = await self.registry.dispatch(message)
-            finally:
+            await self._send_message(transport, response)
+        finally:
+            # The request remains active while its response waits for the send lock
+            # or BLE. A duplicate must not re-execute a completed side effect.
+            if owns_request:
                 self.connection_session.complete_request(message.exec_id)
-        await self._send_message(transport, response)
         self.diagnostics.info(
             "ADV response sent",
             actionId=response.action_id,
@@ -184,6 +193,7 @@ def build_application(
     diagnostics: LocalDiagnostics,
     *,
     provider: RateLimitProvider | None = None,
+    script_runner: ScriptRunner | None = None,
     computer_identity: ComputerIdentity | None = None,
     receive_poll_seconds: float = 1,
     frame_timeout_seconds: float = 5,
@@ -192,6 +202,8 @@ def build_application(
     registry.register(ACTION_SYSTEM_TIME_READ, TimeModule().handle)
     actual_provider = provider or CodexAppServerClient(timeout_seconds=config.codex.request_timeout_seconds)
     modules = ModuleManager(registry, diagnostics)
+    modules.enable_group((ACTION_ACTIONS_LIST, ACTION_SCRIPTS_EXECUTE, ACTION_SHORTCUT_EXECUTE),
+                         lambda: ScriptModule(config, script_runner, diagnostics))
     enabled_ids = {action.action_id for action in config.enabled_actions}
     if ACTION_CODEX_USAGE_READ in enabled_ids:
         modules.enable(ACTION_CODEX_USAGE_READ, lambda: CodexModule(actual_provider))

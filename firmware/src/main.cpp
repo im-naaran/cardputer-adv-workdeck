@@ -6,6 +6,8 @@
 #include "application/codex/codex_page.h"
 #include "application/codex/codex_config_commands.h"
 #include "application/placeholder_page.h"
+#include "application/scripts/scripts_page.h"
+#include "application/input/input_config_commands.h"
 #include "application/time_sync/time_sync_controller.h"
 #include "core/connection_session.h"
 #include "core/message_codec.h"
@@ -24,16 +26,18 @@ adv::MonotonicClock clockSource;
 adv::BleTransport ble;
 adv::ConnectionSession session;
 adv::NavigationService navigation;
+adv::InputRouter inputRouter;
 adv::AppShell shell;
 adv::PlaceholderPage placeholder;
 adv::CodexPage codexPage;
+adv::ScriptsPage scriptsPage;
 adv::MessageCodec codec;
 adv::MessageRouter router;
 adv::ScheduledTaskService scheduler;
 adv::ExecIdGenerator execIds;
 adv::PlatformSystemClock systemClock;
 adv::SystemTimeService systemTime(systemClock);
-// Both controllers submit through the same bounded BLE queue.
+// All controllers submit through the same bounded BLE queue.
 bool enqueueRequest(const std::string& id, const std::string& jsonl, uint32_t now) {
   return ble.enqueueRequest(id, jsonl, now);
 }
@@ -44,7 +48,9 @@ void cancelPending(const std::string& id) {
 
 adv::TimeSyncController timeSync(scheduler, execIds, systemTime, enqueueRequest, cancelPending);
 adv::CodexController codex(scheduler, execIds, enqueueRequest, cancelPending);
+adv::ScriptsController scripts(execIds, enqueueRequest, cancelPending);
 adv::PlatformConfigFileStore configStore;
+adv::InputConfigService inputConfig(configStore, inputRouter);
 adv::CodexConfigService codexConfig(configStore, codex, [] { return clockSource.nowMs(); });
 
 void printTimeDiagnostic() {
@@ -56,16 +62,28 @@ void printTimeDiagnostic() {
                 static_cast<unsigned long>(clockSource.nowMs()));
 }
 
-adv::CodexConfigCommands configCommands(codexConfig, codex,
-    [](const std::string& line) { Serial.println(line.c_str()); }, printTimeDiagnostic);
+void printConfigResult(const std::string& line) { Serial.println(line.c_str()); }
+adv::CodexConfigCommands codexCommands(codexConfig, codex, printConfigResult);
+adv::InputConfigCommands inputCommands(inputConfig, printConfigResult);
+// Exactly one consumer owns the serial byte stream and dispatches complete lines.
+adv::ConfigCommandDispatcher configCommands(
+    [](const std::string& line) { return codexCommands.execute(line); },
+    [](const std::string& line) { return inputCommands.execute(line); },
+    printConfigResult, printTimeDiagnostic);
 bool redrawRequested = true;
+
+void clearModuleSession() {
+  codex.disconnect();
+  timeSync.disconnect();
+  scripts.disconnect();
+  scriptsPage.reset();
+}
 
 void handleConnection() {
   if (!ble.consumeConnectionChanged()) return;
   // A disconnect/reconnect between loop iterations can already look connected.
   // Invalidate the old request/cache before accepting the new transport generation.
-  codex.disconnect();
-  timeSync.disconnect();
+  clearModuleSession();
   if (ble.connected()) session.onBleConnected();
   else {
     session.disconnect();
@@ -85,31 +103,39 @@ void handleMessages() {
 void handleKeyboard(uint32_t now) {
   keyboard.update();
   for (const auto& event : keyboard.takePressedEvents()) {
-    const adv::Module previous = navigation.current();
-    // Global Fn combinations always win over module-specific input.
-    if (navigation.handleGlobal(event)) {
+    // Fn is fully consumed before Alt, then per-module mapping and page input.
+    const auto routed = inputRouter.route(event, navigation.current());
+    const auto previous = navigation.current();
+    if (routed.action == adv::InputAction::kNavigation) {
+      navigation.handleGlobal(routed.event);
       if (navigation.current() != previous) {
         codex.onPageChanged(navigation.current() == adv::Module::kCodex);
         redrawRequested = true;
       }
+      continue;  // Switching pages preserves script requests, selection and feedback.
+    }
+    if (routed.action == adv::InputAction::kShortcut) {
+      scripts.executeByKey(routed.event.character, now);
+      redrawRequested = true;
       continue;
     }
     if (!session.ready()) continue;
+    if (routed.action == adv::InputAction::kConsumed || routed.action == adv::InputAction::kPageKey) continue;
     if (navigation.current() == adv::Module::kCodex) {
-      const size_t previousOffset = codexPage.scrollOffset();
-      const bool wasInFlight = codex.state().inFlight();
-      const bool wasAutomatic = codex.taskState().enabled;
-      if (event.key == adv::Key::kUp) {
-        codexPage.scroll(-1, codex.state().windows().size());
-      } else if (event.key == adv::Key::kDown) {
-        codexPage.scroll(1, codex.state().windows().size());
-      } else {
-        codex.onKey(event, now);
+      if (routed.action == adv::InputAction::kDirection) {
+        if (routed.event.key == adv::Key::kUp) codexPage.scroll(-1, codex.state().windows().size());
+        if (routed.event.key == adv::Key::kDown) codexPage.scroll(1, codex.state().windows().size());
+      } else if (routed.action == adv::InputAction::kConfirm || routed.action == adv::InputAction::kCodexToggle) {
+        codex.onKey(routed.event, now);
       }
-      if (codexPage.scrollOffset() != previousOffset ||
-          codex.state().inFlight() != wasInFlight || codex.taskState().enabled != wasAutomatic) {
-        redrawRequested = true;
+      redrawRequested = true;
+    } else if (navigation.current() == adv::Module::kScripts) {
+      if (routed.action == adv::InputAction::kConfirm) scripts.confirm(now);
+      if (routed.action == adv::InputAction::kDirection) {
+        if (routed.event.key == adv::Key::kUp) scripts.moveSelection(-1, now);
+        if (routed.event.key == adv::Key::kDown) scripts.moveSelection(1, now);
       }
+      redrawRequested = true;
     }
   }
 }
@@ -123,7 +149,9 @@ void draw(uint32_t now) {
   else if (navigation.current() == adv::Module::kCodex) {
     codexPage.render(display, codex.state(), now, codex.taskState());
   }
+  else if (navigation.current() == adv::Module::kScripts) scriptsPage.render(display, scripts.state());
   else placeholder.render(display, navigation.current());
+  shell.renderFeedback(display, scripts.state().feedback);
   shell.endFrame(display);
 }
 }
@@ -144,23 +172,28 @@ void setup() {
   Serial.printf("config startup=%s activeIntervalSeconds=%lu\n",
                 adv::configStatusName(configResult.status),
                 static_cast<unsigned long>(codex.taskState().intervalMs / 1000));
+  const auto inputResult = inputConfig.reload();
+  Serial.printf("input.config startup=%s active=%s\n", adv::configStatusName(inputResult.status),
+                adv::encodeInputConfig(inputConfig.active()).c_str());
   router.registerHandler(adv::protocol::kHelloAction, [](const adv::Message& message) {
     const bool wasReady = session.ready();
     const std::string previousComputer = session.computerId();
     if (session.acceptHello(message)) {
-      // Identity changes invalidate both actions even without a BLE disconnect.
+      // Identity changes invalidate every module even without a BLE disconnect.
       if (wasReady && previousComputer != session.computerId()) {
-        timeSync.disconnect();
-        codex.disconnect();
+        clearModuleSession();
       }
       const uint32_t now = clockSource.nowMs();
       timeSync.onSessionReady(session.computerId(),
                               session.supports(adv::protocol::kTimeReadAction), now);
       codex.onSessionReady(session.supports(adv::protocol::kCodexUsageAction), now);
+      // Preserve initial ordering: time, Codex, then directory. Alt needs no directory.
+      scripts.onSessionReady(session.computerId(), session.supports(adv::protocol::kActionsListAction),
+                             session.supports(adv::protocol::kScriptsExecuteAction),
+                             session.supports(adv::protocol::kShortcutExecuteAction), now);
     } else {
       // A rejected renegotiation must not let a later hello revive the old computer's cache.
-      codex.disconnect();
-      timeSync.disconnect();
+      clearModuleSession();
     }
   });
   router.registerHandler(adv::protocol::kTimeReadAction, [](const adv::Message& message) {
@@ -169,6 +202,12 @@ void setup() {
   router.registerHandler(adv::protocol::kCodexUsageAction, [](const adv::Message& message) {
     codex.onMessage(message, clockSource.nowMs());
   });
+  for (const auto* action : {adv::protocol::kActionsListAction, adv::protocol::kScriptsExecuteAction,
+                             adv::protocol::kShortcutExecuteAction}) {
+    router.registerHandler(action, [](const adv::Message& message) {
+      scripts.onMessage(message, clockSource.nowMs());
+    });
+  }
 }
 
 void loop() {
@@ -186,6 +225,13 @@ void loop() {
   now = clockSource.nowMs();
   handleKeyboard(now);
   const bool wasInFlight = codex.state().inFlight();
+  const auto previousDirectory = scripts.state().directory;
+  const auto previousExecution = scripts.state().execution;
+  const bool hadFeedback = !scripts.state().feedback.empty();
+  scripts.tick(now);
+  // Expiration must redraw once to restore the page footer even on an idle page.
+  if (previousDirectory != scripts.state().directory || previousExecution != scripts.state().execution ||
+      hadFeedback != !scripts.state().feedback.empty()) redrawRequested = true;
   timeSync.tick(now);
   codex.tick(now);
   scheduler.tick(now);

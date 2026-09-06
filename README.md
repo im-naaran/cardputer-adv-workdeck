@@ -2,7 +2,7 @@
 
 Cardputer-Adv 与 macOS 桌面服务通过 BLE 配合的工作台。设备发起请求，电脑读取本机数据并返回结果。
 
-目前支持 Codex 用量查看、跨页面自动刷新，以及电脑授时和每小时同步。其他模块暂为占位页面。
+目前支持 Codex 用量查看、跨页面自动刷新、脚本列表与全局快捷执行，以及电脑授时和每小时同步。剪贴板、设置仍为占位页面。
 
 ## 准备环境
 
@@ -49,10 +49,15 @@ uv run adv-workdeck --ble-id COREBLUETOOTH-UUID
 
 | 按键 | 功能 |
 | --- | --- |
-| `Fn+1`～`Fn+4`、`Fn+←/→` | 切换页面 |
+| `Fn+1`～`Fn+4` | 切换 Codex / 脚本 / 剪贴板 / 设置 |
+| `Fn+,` / `Fn+/`（左 / 右） | 循环切换页面 |
 | Codex 页 `Enter` | 手动刷新 |
 | Codex 页 `Fn+Enter` | 开关自动刷新 |
-| Codex 页 `↑/↓` | 滚动用量窗口 |
+| 无修饰 `;` / `.` | Codex 滚动、脚本列表选择（上 / 下） |
+| 脚本页 `Enter` | 执行选中脚本；加载失败时只重读目录 |
+| 任意页 `Alt+G` | 默认动作：电脑打开 Google |
+
+脚本按电脑配置顺序分页展示，每页最多 8 条，不限制脚本总条数。快捷键不依赖当前页面或目录加载；普通 `g` 不执行动作，重复快捷键只匹配首个有效启用脚本。配置修改后重启桌面服务并重连，详见 [脚本配置](desktop/README.md#脚本配置与执行)。
 
 自动刷新默认每 5 分钟一次，由 ADV 的 `/config/codex.json` 控制，范围为 60～3600 秒。切页后仍刷新；关闭后可手动查询，重新开启后等待完整周期。开关在重连后保留，重启恢复默认开启。
 
@@ -80,6 +85,8 @@ codex.config.reload
 
 文件读取失败时，启动使用默认 300 秒，运行中保留当前周期。`ReloadFailed` 或 `ApplyFailed` 表示尚未成功应用，文件可能已保存，可修复问题后 reload。未部署文件系统时会报告 `NotMounted`，固件不会自动格式化。设备设置页面后续将复用同一保存入口。
 
+方向映射可按模块独立保存，例如 `input.config.save {"scripts":{"directionMapping":false}}` 仅关闭脚本页映射，其余缺省为开启。命令同样需要换行，保存后立即生效；详见 [输入配置](firmware/README.md#按键与方向映射)。
+
 ## 代码与参考资料
 
 - [desktop](desktop/README.md)：桌面分层、配置、动作注册与并发处理。
@@ -88,3 +95,5 @@ codex.config.reload
 - [specs](specs/)：需求、设计和任务历史。
 - [授时验收记录](specs/20260905_scheduled_task_time_sync/tasks.md#task-15-操作说明与真机验收)。
 - [配置验收记录](specs/20260905_adv_module_runtime_config/tasks.md#task-08-真机配置持久化与即时生效验收)。
+
+- [脚本与快捷键验收](specs/20260905_scripts_global_shortcuts/acceptance.md)：含 17 条脚本配置及待人工确认项目。

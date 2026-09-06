@@ -1,0 +1,206 @@
+{
+  "configVersion": 1,
+  "settings": {
+    "codex": {
+      "requestTimeoutSeconds": 15
+    }
+  },
+  "actions": [
+    {
+      "type": "codex",
+      "actionId": "codex.usage.read",
+      "name": "Codex usage",
+      "key": null,
+      "enabled": true,
+      "content": "usage",
+      "params": {}
+    },
+    {
+      "type": "script",
+      "actionId": "script.acceptance.01",
+      "name": "验收脚本 01",
+      "key": "g",
+      "enabled": true,
+      "content": "printf 'script-01\\n' >> /tmp/adv-workdeck-script-acceptance.log",
+      "params": {
+        "timeoutSeconds": 15
+      }
+    },
+    {
+      "type": "script",
+      "actionId": "script.acceptance.02",
+      "name": "验收脚本 02",
+      "key": null,
+      "enabled": true,
+      "content": "printf 'script-02\\n' >> /tmp/adv-workdeck-script-acceptance.log",
+      "params": {
+        "timeoutSeconds": 15
+      }
+    },
+    {
+      "type": "script",
+      "actionId": "script.acceptance.03",
+      "name": "验收脚本 03",
+      "key": null,
+      "enabled": true,
+      "content": "printf 'script-03\\n' >> /tmp/adv-workdeck-script-acceptance.log",
+      "params": {
+        "timeoutSeconds": 15
+      }
+    },
+    {
+      "type": "script",
+      "actionId": "script.acceptance.04",
+      "name": "验收脚本 04",
+      "key": null,
+      "enabled": true,
+      "content": "printf 'script-04\\n' >> /tmp/adv-workdeck-script-acceptance.log",
+      "params": {
+        "timeoutSeconds": 15
+      }
+    },
+    {
+      "type": "script",
+      "actionId": "script.acceptance.05",
+      "name": "验收脚本 05",
+      "key": null,
+      "enabled": true,
+      "content": "printf 'script-05\\n' >> /tmp/adv-workdeck-script-acceptance.log",
+      "params": {
+        "timeoutSeconds": 15
+      }
+    },
+    {
+      "type": "script",
+      "actionId": "script.acceptance.06",
+      "name": "验收脚本 06",
+      "key": null,
+      "enabled": true,
+      "content": "printf 'script-06\\n' >> /tmp/adv-workdeck-script-acceptance.log",
+      "params": {
+        "timeoutSeconds": 15
+      }
+    },
+    {
+      "type": "script",
+      "actionId": "script.acceptance.07",
+      "name": "验收脚本 07",
+      "key": null,
+      "enabled": true,
+      "content": "printf 'script-07\\n' >> /tmp/adv-workdeck-script-acceptance.log",
+      "params": {
+        "timeoutSeconds": 15
+      }
+    },
+    {
+      "type": "script",
+      "actionId": "script.acceptance.08",
+      "name": "验收脚本 08",
+      "key": null,
+      "enabled": true,
+      "content": "printf 'script-08\\n' >> /tmp/adv-workdeck-script-acceptance.log",
+      "params": {
+        "timeoutSeconds": 15
+      }
+    },
+    {
+      "type": "script",
+      "actionId": "script.acceptance.09",
+      "name": "验收脚本 09",
+      "key": "g",
+      "enabled": true,
+      "content": "printf 'script-09\\n' >> /tmp/adv-workdeck-script-acceptance.log",
+      "params": {
+        "timeoutSeconds": 15
+      }
+    },
+    {
+      "type": "script",
+      "actionId": "script.acceptance.10",
+      "name": "验收脚本 10",
+      "key": null,
+      "enabled": true,
+      "content": "printf 'script-10\\n' >> /tmp/adv-workdeck-script-acceptance.log",
+      "params": {
+        "timeoutSeconds": 15
+      }
+    },
+    {
+      "type": "script",
+      "actionId": "script.acceptance.11",
+      "name": "验收脚本 11",
+      "key": null,
+      "enabled": true,
+      "content": "printf 'script-11\\n' >> /tmp/adv-workdeck-script-acceptance.log",
+      "params": {
+        "timeoutSeconds": 15
+      }
+    },
+    {
+      "type": "script",
+      "actionId": "script.acceptance.12",
+      "name": "验收脚本 12",
+      "key": null,
+      "enabled": true,
+      "content": "printf 'script-12\\n' >> /tmp/adv-workdeck-script-acceptance.log",
+      "params": {
+        "timeoutSeconds": 15
+      }
+    },
+    {
+      "type": "script",
+      "actionId": "script.acceptance.13",
+      "name": "验收脚本 13",
+      "key": null,
+      "enabled": true,
+      "content": "printf 'script-13\\n' >> /tmp/adv-workdeck-script-acceptance.log",
+      "params": {
+        "timeoutSeconds": 15
+      }
+    },
+    {
+      "type": "script",
+      "actionId": "script.acceptance.14",
+      "name": "验收脚本 14",
+      "key": null,
+      "enabled": true,
+      "content": "/bin/sleep 5; printf 'script-14\\n' >> /tmp/adv-workdeck-script-acceptance.log",
+      "params": {
+        "timeoutSeconds": 15
+      }
+    },
+    {
+      "type": "script",
+      "actionId": "script.acceptance.15",
+      "name": "验收脚本 15",
+      "key": null,
+      "enabled": true,
+      "content": "/bin/sleep 3; printf 'script-15\\n' >> /tmp/adv-workdeck-script-acceptance.log",
+      "params": {
+        "timeoutSeconds": 1
+      }
+    },
+    {
+      "type": "script",
+      "actionId": "script.acceptance.16",
+      "name": "验收脚本 16",
+      "key": null,
+      "enabled": true,
+      "content": "exit 7",
+      "params": {
+        "timeoutSeconds": 15
+      }
+    },
+    {
+      "type": "script",
+      "actionId": "script.acceptance.17",
+      "name": "验收脚本 17",
+      "key": "z",
+      "enabled": true,
+      "content": "printf 'script-17\\n' >> /tmp/adv-workdeck-script-acceptance.log",
+      "params": {
+        "timeoutSeconds": 15
+      }
+    }
+  ]
+}

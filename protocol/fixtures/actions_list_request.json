@@ -1,0 +1,8 @@
+{
+  "event": "request",
+  "actionId": "actions.list",
+  "execId": "scripts-1",
+  "payload": {
+    "offset": 0
+  }
+}

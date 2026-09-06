@@ -1,0 +1,14 @@
+{
+  "event": "response",
+  "actionId": "actions.shortcut.execute",
+  "execId": "scripts-1",
+  "result": {
+    "code": "OK",
+    "msg": "script result",
+    "data": {
+      "actionId": "script.google.open",
+      "name": "打开 Google",
+      "exitCode": 0
+    }
+  }
+}

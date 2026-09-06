@@ -14,7 +14,10 @@
   "actionIds": [
     "system.hello",
     "codex.usage.read",
-    "system.time.read"
+    "system.time.read",
+    "actions.list",
+    "scripts.execute",
+    "actions.shortcut.execute"
   ],
   "resultCodes": [
     "OK",
@@ -24,5 +27,6 @@
     "TIMEOUT",
     "INVALID_RESPONSE",
     "ERROR"
-  ]
+  ],
+  "scriptPageSize": 8
 }

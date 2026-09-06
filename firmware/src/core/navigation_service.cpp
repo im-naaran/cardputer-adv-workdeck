@@ -3,8 +3,9 @@
 namespace adv {
 
 bool NavigationService::handleGlobal(const KeyEvent& event) {
-  if (!event.fn) return false;
+  if (!event.fn || event.ctrl || event.shift || event.opt) return false;
   int next = static_cast<int>(current_);
+  // InputRouter owns physical-key mapping; navigation consumes the mapped key.
   switch (event.key) {
     case Key::kDigit1: next = 0; break;
     case Key::kDigit2: next = 1; break;
@@ -19,4 +20,3 @@ bool NavigationService::handleGlobal(const KeyEvent& event) {
 }
 
 }  // namespace adv
-

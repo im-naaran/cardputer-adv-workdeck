@@ -4,7 +4,6 @@ namespace adv {
 
 void PlaceholderPage::render(DisplayAdapter& display, Module module) const {
   const char* title = "设置";
-  if (module == Module::kScripts) title = "快捷脚本";
   if (module == Module::kClipboard) title = "剪贴板";
   display.fillRoundRect(12, 32, 216, 82, 8, color::kSurface);
   display.drawRoundRect(12, 32, 216, 82, 8, color::kBorder);

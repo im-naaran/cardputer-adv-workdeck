@@ -28,6 +28,7 @@ class DisplayAdapter {
   void fillCircle(int x, int y, int radius, uint16_t color);
   void drawText(const std::string& text, int x, int y, uint16_t color,
                 FontStyle style = FontStyle::kBody);
+  std::string fitText(const std::string& text, int maxWidth, FontStyle style = FontStyle::kChinese);
   int textWidth(const std::string& text, FontStyle style = FontStyle::kBody);
 };
 

@@ -126,3 +126,23 @@ jq empty protocol/fixtures/*.json
 ```
 
 双端契约用例分别位于 `firmware/test/test_protocol/`、`desktop/tests/test_messages.py` 和 `desktop/tests/test_protocol_constants.py`。JSON 语法检查不替代这些语义断言；首次查询、重连和分片顺序由双端集成用例覆盖。
+
+## 脚本与分页目录契约
+
+hello 仅新增 `actions.list`、`scripts.execute`、`actions.shortcut.execute` 三个固定能力，不列出每条脚本 ID。配置总条数没有业务上限；每页最多 8 条只限制设备缓存和单帧大小。
+
+| 请求 actionId | payload | 成功 data |
+| --- | --- | --- |
+| actions.list | `{"offset":0}` | `{"offset":0,"total":9,"nextOffset":8,"actions":[...]}` |
+| scripts.execute | `{"actionId":"script.google.open"}` | `{"actionId":"script.google.open","name":"打开 Google","exitCode":0}` |
+| actions.shortcut.execute | `{"key":"g"}` | 同上，包含实际匹配脚本的 ID/名称 |
+
+列表项含 type=script、actionId、name、key、effectiveKey。两个 key 均为 null 或单个小写 ASCII 字母；effectiveKey 非空时等于 key。重复 key 合法，仅完整配置的首个有效启用匹配项有 effectiveKey，后续项仍可按 ID 执行。电脑匹配全局键，不依赖设备加载页面。
+
+offset 为非负整数且是 8 的倍数；total/offset/nextOffset 使用 uint64 表示。非空目录 offset 必须小于 total，空目录仅允许 offset=0。非末页返回 8 项且 nextOffset=offset+8，末页返回剩余项且 nextOffset=null。必需字段不得缺省；配置在服务运行期间不热更新，跨页 total 必须一致。单次只缓存当前页，断线清理；页/会话关联由控制器核验。
+
+脚本 ID 为 `script.` 加非空 ASCII 字母/数字/点/下划线/连字符，最多 64 字节；名称非空、最多 64 UTF-8 字节、不含 ASCII 控制字符。目录不发送命令、参数或输出。整帧（包括转义和最长 execId）仍必须 <=4096 字节，超限返回 ERROR 而不是删去配置条目。
+
+执行响应外层 actionId 原样回显协议动作，data.actionId 才是实际脚本。OK 必须 exitCode 为整数 0；已解析脚本的 ERROR/TIMEOUT 包含 ID/名称，exitCode 可为空；未解析动作或 BUSY 的 data 可为 null。设备不自动重放副作用请求，超时/断线不能证明电脑没有执行。请求只接受表中 payload 字段，未绑定键/禁用或不存在 ID 返回 ERROR。
+
+`actions_page_*.json`、`script_execute_*.json`、`script_shortcut_*.json` 和 `actions_list_request.json` 为双端共享样例。新增能力不影响旧桌面 Codex/授时协商。

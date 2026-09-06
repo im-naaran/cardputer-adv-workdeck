@@ -10,8 +10,91 @@ namespace {
 bool requiredString(JsonObjectConst object, const char* key, std::string& value) {
   JsonVariantConst field = object[key];
   if (!field.is<const char*>()) return false;
-  value = field.as<const char*>();
+  // Preserve embedded NULs so metadata validation rejects them instead of
+  // silently accepting the valid-looking prefix of an ID/name/shortcut.
+  const auto text = field.as<JsonString>();
+  value.assign(text.c_str(), text.size());
   return !value.empty();
+}
+
+bool scriptId(const std::string& value) {
+  if (value.size() <= 7 || value.size() > 64 || value.compare(0, 7, "script.") != 0) return false;
+  for (unsigned char c : value) {
+    if (!((c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
+          (c >= '0' && c <= '9') || c == '.' || c == '_' || c == '-')) return false;
+  }
+  return true;
+}
+bool scriptName(const std::string& value) {
+  if (value.empty() || value.size() > 64) return false;
+  bool nonSpace = false;
+  for (unsigned char c : value) {
+    if (c < 32 || c == 127) return false;
+    if (c != ' ') nonSpace = true;
+  }
+  return nonSpace;
+}
+bool nullableKey(JsonObjectConst object, const char* field, std::string& out) {
+  if (object[field].isUnbound()) return false;
+  if (object[field].isNull()) return true;
+  if (!requiredString(object, field, out)) return false;
+  return out.size() == 1 && out[0] >= 'a' && out[0] <= 'z';
+}
+bool decodePage(JsonObjectConst data, Message& message) {
+  if (!data["offset"].is<uint64_t>() || !data["total"].is<uint64_t>() ||
+      !data["actions"].is<JsonArrayConst>() || data["nextOffset"].isUnbound()) return false;
+  message.offset = data["offset"].as<uint64_t>();
+  message.total = data["total"].as<uint64_t>();
+  if (message.offset % protocol::kScriptPageSize ||
+      (message.total == 0 ? message.offset != 0 : message.offset >= message.total)) return false;
+  auto items = data["actions"].as<JsonArrayConst>();
+  const uint64_t remaining = message.total - message.offset;
+  const size_t count = remaining < protocol::kScriptPageSize ? remaining : protocol::kScriptPageSize;
+  if (items.size() != count) return false;
+  message.hasNextOffset = remaining > count;
+  if (message.hasNextOffset) {
+    if (!data["nextOffset"].is<uint64_t>()) return false;
+    message.nextOffset = data["nextOffset"].as<uint64_t>();
+    if (message.nextOffset != message.offset + count) return false;
+  } else if (!data["nextOffset"].isNull()) return false;
+  for (JsonVariantConst raw : items) {
+    if (!raw.is<JsonObjectConst>()) return false;
+    auto item = raw.as<JsonObjectConst>();
+    ScriptEntry entry;
+    std::string type;
+    if (!requiredString(item, "type", type) || type != "script" ||
+        !requiredString(item, "actionId", entry.actionId) || !scriptId(entry.actionId) ||
+        !requiredString(item, "name", entry.name) || !scriptName(entry.name) ||
+        !nullableKey(item, "key", entry.key) || !nullableKey(item, "effectiveKey", entry.effectiveKey) ||
+        (!entry.effectiveKey.empty() && entry.effectiveKey != entry.key)) return false;
+    for (const auto& previous : message.scripts) if (previous.actionId == entry.actionId) return false;
+    message.scripts.push_back(entry);
+  }
+  return true;
+}
+bool decodeExecution(JsonVariantConst raw, Message& message) {
+  if (raw.isNull() && message.resultCode != "OK") return true;
+  if (!raw.is<JsonObjectConst>()) return false;
+  auto data = raw.as<JsonObjectConst>();
+  if (!requiredString(data, "actionId", message.executedActionId) || !scriptId(message.executedActionId) ||
+      !requiredString(data, "name", message.executedName) || !scriptName(message.executedName)) return false;
+  if (!data["exitCode"].isNull()) {
+    if (!data["exitCode"].is<int32_t>()) return false;
+    message.hasExitCode = true;
+    message.exitCode = data["exitCode"].as<int32_t>();
+  }
+  return message.resultCode != "OK" || (message.hasExitCode && message.exitCode == 0);
+}
+std::string scriptRequest(const std::string& execId, const char* action,
+                          const char* field, JsonVariantConst value) {
+  JsonDocument doc;
+  doc["event"] = "request";
+  doc["actionId"] = action;
+  doc["execId"] = execId;
+  doc["payload"][field] = value;
+  std::string output;
+  serializeJson(doc, output);
+  return output + '\n';
 }
 
 }  // namespace
@@ -59,7 +142,18 @@ DecodeResult MessageCodec::decode(const std::string& json) const {
     return decoded;
   }
 
+  if (result["data"].isUnbound()) {
+    decoded.error = "response data missing";
+    return decoded;
+  }
   JsonObjectConst data = result["data"].as<JsonObjectConst>();
+  if ((decoded.message.actionId == protocol::kActionsListAction && decoded.message.resultCode == "OK" &&
+       !decodePage(data, decoded.message)) ||
+      ((decoded.message.actionId == protocol::kScriptsExecuteAction || decoded.message.actionId == protocol::kShortcutExecuteAction) &&
+       !decodeExecution(result["data"], decoded.message))) {
+    decoded.error = "invalid script response";
+    return decoded;
+  }
   if (decoded.message.actionId == protocol::kHelloAction &&
       decoded.message.resultCode == "OK") {
     if (data.isNull() || !data["protocolVersion"].is<int>() ||
@@ -141,6 +235,22 @@ std::string MessageCodec::encodeTimeRequest(const std::string& execId) const {
   std::string output;
   serializeJson(document, output);
   return output + '\n';
+}
+
+std::string MessageCodec::encodeActionsListRequest(const std::string& execId, uint64_t offset) const {
+  JsonDocument value;
+  value.set(offset);
+  return scriptRequest(execId, protocol::kActionsListAction, "offset", value.as<JsonVariantConst>());
+}
+std::string MessageCodec::encodeScriptExecuteRequest(const std::string& execId, const std::string& actionId) const {
+  JsonDocument value;
+  value.set(actionId);
+  return scriptRequest(execId, protocol::kScriptsExecuteAction, "actionId", value.as<JsonVariantConst>());
+}
+std::string MessageCodec::encodeShortcutExecuteRequest(const std::string& execId, char key) const {
+  JsonDocument value;
+  value.set(std::string(1, key));
+  return scriptRequest(execId, protocol::kShortcutExecuteAction, "key", value.as<JsonVariantConst>());
 }
 
 }  // namespace adv

@@ -14,6 +14,28 @@
       "enabled": true,
       "content": "usage",
       "params": {}
+    },
+    {
+      "type": "script",
+      "actionId": "script.google.open",
+      "name": "打开 Google",
+      "key": "g",
+      "enabled": true,
+      "content": "open https://google.com",
+      "params": {
+        "timeoutSeconds": 15
+      }
+    },
+    {
+      "type": "script",
+      "actionId": "script.naaran.open",
+      "name": "打开 Naaran",
+      "key": "n",
+      "enabled": true,
+      "content": "open https://naaran.com",
+      "params": {
+        "timeoutSeconds": 15
+      }
     }
   ]
 }

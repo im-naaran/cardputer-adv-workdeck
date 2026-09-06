@@ -4,7 +4,9 @@ import json
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from .script_contract import validate_page, validate_execution
 from .protocol_constants import (
+    ACTION_ACTIONS_LIST, ACTION_SCRIPTS_EXECUTE, ACTION_SHORTCUT_EXECUTE,
     ACTION_CODEX_USAGE_READ,
     ACTION_SYSTEM_HELLO,
     ACTION_SYSTEM_TIME_READ,
@@ -95,6 +97,13 @@ def parse_message(payload: Any) -> Message:
             if (type(epoch_ms) is not int or not 0 <= epoch_ms <= 2**63 - 1
                     or type(offset) is not int or not -720 <= offset <= 840):
                 raise ProtocolError("invalid time data")
+        try:
+            if action_id == ACTION_ACTIONS_LIST and code == "OK":
+                validate_page(raw_result["data"])
+            elif action_id in (ACTION_SCRIPTS_EXECUTE, ACTION_SHORTCUT_EXECUTE):
+                validate_execution(code, raw_result["data"])
+        except ValueError as error:
+            raise ProtocolError(str(error)) from error
         return ResponseMessage("response", action_id, exec_id, Result(code, msg, raw_result["data"]))
     raise ProtocolError("event must be request or response")
 

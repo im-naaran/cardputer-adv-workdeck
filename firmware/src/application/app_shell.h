@@ -12,6 +12,7 @@ class AppShell {
   void beginFrame(DisplayAdapter& display, Module current, int batteryLevel,
                   bool connected) const;
   void renderDisconnected(DisplayAdapter& display) const;
+  void renderFeedback(DisplayAdapter& display, const std::string& text) const;
   void endFrame(DisplayAdapter& display) const;
 
  private:

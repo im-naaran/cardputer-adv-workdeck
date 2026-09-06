@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
 from typing import Any
 
 from adv_helper.core.protocol_constants import ACTION_CODEX_USAGE_READ
+from adv_helper.core.script_contract import valid_key, valid_name, valid_script_id, utf8_fits
 from adv_helper.os_adapters.codex_app_server import DEFAULT_RPC_TIMEOUT_SECONDS
 
 
@@ -39,6 +40,7 @@ class AppConfig:
     actions: tuple[ActionConfig, ...]
     action_errors: tuple[str, ...] = ()
     warnings: tuple[str, ...] = ()
+    config_directory: Path = Path(".")
 
     @property
     def enabled_actions(self) -> tuple[ActionConfig, ...]:
@@ -51,7 +53,7 @@ def load_config(path: str | Path) -> AppConfig:
             payload = json.load(file)
     except (OSError, json.JSONDecodeError) as error:
         raise ConfigError(f"cannot load config: {error}") from error
-    return parse_config(payload)
+    return replace(parse_config(payload), config_directory=Path(path).resolve().parent)
 
 
 def parse_config(payload: Any) -> AppConfig:
@@ -117,6 +119,9 @@ def _parse_action(payload: Any, index: int) -> ActionConfig:
     action_id = _non_empty_string(action.get("actionId"), "actionId")
     name = _non_empty_string(action.get("name"), "name")
     content = _non_empty_string(action.get("content"), "content")
+    if action_type == "script":
+        # Shell whitespace and newlines belong to the program, not UI metadata.
+        content = action["content"]
     key = action.get("key")
     if key is not None and not isinstance(key, str):
         raise ConfigError("key must be a string or null")
@@ -124,8 +129,22 @@ def _parse_action(payload: Any, index: int) -> ActionConfig:
     if type(enabled) is not bool:
         raise ConfigError("enabled must be a boolean")
     params = _require_object(action.get("params", {}), "params")
-    if action_type != "codex" or action_id != ACTION_CODEX_USAGE_READ or content != "usage":
-        raise ConfigError("unsupported action; expected codex.usage.read")
+    if action_type == "script":
+        if not valid_script_id(action_id):
+            raise ConfigError("script actionId must use script. prefix and at most 64 ASCII identifier characters")
+        if not valid_name(name):
+            raise ConfigError("script name must be single-line text within 64 UTF-8 bytes")
+        if key is not None and not key.isascii():
+            raise ConfigError("script key must be one ASCII letter or null")
+        key = key.lower() if key is not None else None
+        if not valid_key(key):
+            raise ConfigError("script key must be one ASCII letter or null")
+        if "\0" in content or not utf8_fits(content, 8192):
+            raise ConfigError("script content contains NUL, invalid UTF-8 or exceeds 8192 bytes")
+        _reject_unknown(params, {"timeoutSeconds"}, "script.params")
+        params = {"timeoutSeconds": _bounded_int(params.get("timeoutSeconds", 15), "timeoutSeconds", 1, 30)}
+    elif action_type != "codex" or action_id != ACTION_CODEX_USAGE_READ or content != "usage":
+        raise ConfigError("unsupported action; expected codex.usage.read or script")
     return ActionConfig(action_type, action_id, name, key, enabled, content, params)
 
 

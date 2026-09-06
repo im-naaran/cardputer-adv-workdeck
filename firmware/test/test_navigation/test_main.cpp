@@ -28,6 +28,9 @@ void test_left_and_right_wrap() {
 void test_non_global_key_is_not_consumed() {
   adv::NavigationService nav;
   TEST_ASSERT_FALSE(nav.handleGlobal({adv::Key::kEnter, true}));
+  TEST_ASSERT_FALSE(nav.handleGlobal({adv::Key::kCharacter, true, ','}));
+  TEST_ASSERT_FALSE(nav.handleGlobal({adv::Key::kCharacter, true, '/'}));
+  TEST_ASSERT_EQUAL_INT(static_cast<int>(adv::Module::kCodex), static_cast<int>(nav.current()));
 }
 
 }  // namespace

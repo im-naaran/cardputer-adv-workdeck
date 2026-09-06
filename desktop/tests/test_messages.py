@@ -19,7 +19,7 @@ FIXTURES = Path(__file__).parents[2] / "protocol" / "fixtures"
 def test_shared_message_fixtures(path):
     if path.name == "protocol_constants.json":
         return
-    if path.name == "system_time_invalid.json":
+    if path.name in {"system_time_invalid.json", "actions_page_invalid.json"}:
         with pytest.raises(ProtocolError):
             decode_message(path.read_bytes())
         return

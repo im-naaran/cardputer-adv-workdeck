@@ -88,6 +88,15 @@ void AppShell::renderDisconnected(DisplayAdapter& display) const {
                    87, color::kMuted, FontStyle::kChinese);
 }
 
+void AppShell::renderFeedback(DisplayAdapter& display, const std::string& text) const {
+  if (text.empty()) return;
+  // A temporary content footer overlays page detail without touching the system bar.
+  const int y = display.height() - 20;
+  display.fillRect(0, y, display.width(), 20, color::kSurface);
+  display.drawLine(5, y, display.width()-5, y, color::kAccent);
+  display.drawText(display.fitText(text, display.width()-12), 6, y+2, color::kText, FontStyle::kChinese);
+}
+
 void AppShell::endFrame(DisplayAdapter& display) const { display.endFrame(); }
 
 }  // namespace adv

@@ -1,0 +1,14 @@
+{
+  "event": "response",
+  "actionId": "scripts.execute",
+  "execId": "scripts-1",
+  "result": {
+    "code": "ERROR",
+    "msg": "script result",
+    "data": {
+      "actionId": "script.google.open",
+      "name": "打开 Google",
+      "exitCode": 2
+    }
+  }
+}

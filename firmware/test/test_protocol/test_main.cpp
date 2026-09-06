@@ -1,4 +1,5 @@
 #include <unity.h>
+#include <ArduinoJson.h>
 
 #include <fstream>
 #include <sstream>
@@ -65,6 +66,86 @@ void test_time_contract() {
   TEST_ASSERT_TRUE(codec.decode(codec.encodeTimeRequest("time-1")).ok);
 }
 
+std::string compact(JsonDocument& doc) {
+  std::string out;
+  serializeJson(doc, out);
+  return out;
+}
+void test_script_contract() {
+  adv::MessageCodec codec;
+  auto first = codec.decode(fixture("actions_page_first.json"));
+  TEST_ASSERT_TRUE(first.ok);
+  TEST_ASSERT_EQUAL(8, first.message.scripts.size());
+  TEST_ASSERT_EQUAL(9, first.message.total);
+  TEST_ASSERT_TRUE(first.message.hasNextOffset);
+  TEST_ASSERT_EQUAL_STRING("g", first.message.scripts[0].effectiveKey.c_str());
+  TEST_ASSERT_TRUE(first.message.scripts[1].effectiveKey.empty());
+  auto last = codec.decode(fixture("actions_page_last.json"));
+  TEST_ASSERT_TRUE(last.ok);
+  TEST_ASSERT_FALSE(last.message.hasNextOffset);
+  TEST_ASSERT_TRUE(codec.decode(fixture("actions_page_empty.json")).ok);
+  TEST_ASSERT_FALSE(codec.decode(fixture("actions_page_invalid.json")).ok);
+  for (auto name : {"script_execute_success.json", "script_execute_error.json", "script_shortcut_success.json"}) {
+    auto result = codec.decode(fixture(name));
+    TEST_ASSERT_TRUE(result.ok);
+    TEST_ASSERT_EQUAL_STRING("script.google.open", result.message.executedActionId.c_str());
+  }
+  JsonDocument doc;
+  deserializeJson(doc, fixture("actions_page_first.json"));
+  doc["result"]["data"]["total"] = true;
+  TEST_ASSERT_FALSE(codec.decode(compact(doc)).ok);
+  deserializeJson(doc, fixture("actions_page_first.json"));
+  doc["result"]["data"]["actions"][0]["key"] = "G";
+  TEST_ASSERT_FALSE(codec.decode(compact(doc)).ok);
+  deserializeJson(doc, fixture("actions_page_first.json"));
+  doc["result"]["data"]["actions"][1]["actionId"] = "script.test.0";
+  TEST_ASSERT_FALSE(codec.decode(compact(doc)).ok);
+  deserializeJson(doc, fixture("actions_page_empty.json"));
+  doc["result"]["data"].remove("nextOffset");
+  TEST_ASSERT_FALSE(codec.decode(compact(doc)).ok);
+  deserializeJson(doc, fixture("script_execute_success.json"));
+  doc["result"]["data"]["exitCode"] = true;
+  TEST_ASSERT_FALSE(codec.decode(compact(doc)).ok);
+  doc["result"]["data"]["exitCode"] = 1;
+  TEST_ASSERT_FALSE(codec.decode(compact(doc)).ok);
+  doc["result"]["data"]["exitCode"] = 0;
+  doc["result"]["data"]["future"] = true;
+  TEST_ASSERT_TRUE(codec.decode(compact(doc)).ok);
+}
+void test_script_metadata_does_not_truncate_embedded_nul() {
+  adv::MessageCodec codec;
+  for (const char* field : {"actionId", "name", "key"}) {
+    JsonDocument doc;
+    deserializeJson(doc, fixture("actions_page_first.json"));
+    const std::string prefix = field == std::string("actionId") ? "script.test.0" :
+                               field == std::string("name") ? "Valid" : "g";
+    const std::string value = prefix + std::string(1, '\0') + "suffix";
+    doc["result"]["data"]["actions"][0][field] = value;
+    TEST_ASSERT_FALSE(codec.decode(compact(doc)).ok);
+  }
+}
+void test_script_requests_and_maximum_page() {
+  adv::MessageCodec codec;
+  JsonDocument doc;
+  deserializeJson(doc, codec.encodeActionsListRequest("page", 8));
+  TEST_ASSERT_EQUAL_STRING("actions.list", doc["actionId"].as<const char*>());
+  TEST_ASSERT_EQUAL(8, doc["payload"]["offset"].as<int>());
+  deserializeJson(doc, codec.encodeScriptExecuteRequest("exec", "script.google.open"));
+  TEST_ASSERT_EQUAL_STRING("scripts.execute", doc["actionId"].as<const char*>());
+  TEST_ASSERT_EQUAL_STRING("script.google.open", doc["payload"]["actionId"].as<const char*>());
+  deserializeJson(doc, codec.encodeShortcutExecuteRequest("exec", 'g'));
+  TEST_ASSERT_EQUAL_STRING("g", doc["payload"]["key"].as<const char*>());
+  deserializeJson(doc, fixture("actions_page_first.json"));
+  doc["execId"] = std::string(128, '"');
+  int i = 0;
+  for (JsonObject item : doc["result"]["data"]["actions"].as<JsonArray>()) {
+    item["name"] = std::string(64, '\\');
+    item["actionId"] = "script." + std::to_string(i++) + std::string(56, 'x');
+  }
+  TEST_ASSERT_LESS_OR_EQUAL(4096, compact(doc).size());
+  TEST_ASSERT_TRUE(codec.decode(compact(doc)).ok);
+}
+
 void test_request_encoding_and_exec_id() {
   adv::MessageCodec codec;
   const std::string encoded = codec.encodeCodexUsageRequest("exec-42");
@@ -116,6 +197,9 @@ int main(int, char**) {
   RUN_TEST(test_shared_fixtures_decode);
   RUN_TEST(test_hello_without_settings);
   RUN_TEST(test_time_contract);
+  RUN_TEST(test_script_contract);
+  RUN_TEST(test_script_metadata_does_not_truncate_embedded_nul);
+  RUN_TEST(test_script_requests_and_maximum_page);
   RUN_TEST(test_missing_and_invalid_fields_rejected);
   RUN_TEST(test_request_encoding_and_exec_id);
   RUN_TEST(test_router_handles_known_only);

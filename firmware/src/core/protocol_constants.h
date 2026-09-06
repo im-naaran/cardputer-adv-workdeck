@@ -16,4 +16,9 @@ constexpr const char* kHelloAction = "system.hello";
 constexpr const char* kCodexUsageAction = "codex.usage.read";
 constexpr const char* kTimeReadAction = "system.time.read";
 
+constexpr const char* kActionsListAction = "actions.list";
+constexpr const char* kScriptsExecuteAction = "scripts.execute";
+constexpr const char* kShortcutExecuteAction = "actions.shortcut.execute";
+constexpr size_t kScriptPageSize = 8;
+
 }  // namespace adv::protocol

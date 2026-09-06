@@ -170,6 +170,21 @@ void DisplayAdapter::drawText(const std::string& text, int x, int y,
 #endif
 }
 
+std::string DisplayAdapter::fitText(const std::string& text, int maxWidth, FontStyle style) {
+  if (text.empty() || maxWidth <= 0) return {};
+  if (textWidth(text, style) <= maxWidth) return text;
+  if (textWidth("..", style) > maxWidth) return {};
+  std::string fitted = text;
+  // Measure in the active font and remove whole UTF-8 characters, never bytes
+  // from a Chinese name. The original action name/ID remains intact.
+  do {
+    size_t last = fitted.size() - 1;
+    while (last > 0 && (static_cast<unsigned char>(fitted[last]) & 0xc0) == 0x80) --last;
+    fitted.resize(last);
+  } while (!fitted.empty() && textWidth(fitted + "..", style) > maxWidth);
+  return fitted + "..";
+}
+
 int DisplayAdapter::textWidth(const std::string& text, FontStyle style) {
 #ifdef ARDUINO
   if (frameReady) {

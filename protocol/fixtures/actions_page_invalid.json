@@ -1,0 +1,23 @@
+{
+  "event": "response",
+  "actionId": "actions.list",
+  "execId": "scripts-1",
+  "result": {
+    "code": "OK",
+    "msg": "script result",
+    "data": {
+      "offset": 8,
+      "total": 9,
+      "nextOffset": 16,
+      "actions": [
+        {
+          "type": "script",
+          "actionId": "script.test.8",
+          "name": "测试 8",
+          "key": "g",
+          "effectiveKey": null
+        }
+      ]
+    }
+  }
+}

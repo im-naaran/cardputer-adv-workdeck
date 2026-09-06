@@ -1,0 +1,72 @@
+{
+  "event": "response",
+  "actionId": "actions.list",
+  "execId": "scripts-1",
+  "result": {
+    "code": "OK",
+    "msg": "script result",
+    "data": {
+      "offset": 0,
+      "total": 9,
+      "nextOffset": 8,
+      "actions": [
+        {
+          "type": "script",
+          "actionId": "script.test.0",
+          "name": "测试 0",
+          "key": "g",
+          "effectiveKey": "g"
+        },
+        {
+          "type": "script",
+          "actionId": "script.test.1",
+          "name": "测试 1",
+          "key": "g",
+          "effectiveKey": null
+        },
+        {
+          "type": "script",
+          "actionId": "script.test.2",
+          "name": "测试 2",
+          "key": "g",
+          "effectiveKey": null
+        },
+        {
+          "type": "script",
+          "actionId": "script.test.3",
+          "name": "测试 3",
+          "key": "g",
+          "effectiveKey": null
+        },
+        {
+          "type": "script",
+          "actionId": "script.test.4",
+          "name": "测试 4",
+          "key": "g",
+          "effectiveKey": null
+        },
+        {
+          "type": "script",
+          "actionId": "script.test.5",
+          "name": "测试 5",
+          "key": "g",
+          "effectiveKey": null
+        },
+        {
+          "type": "script",
+          "actionId": "script.test.6",
+          "name": "测试 6",
+          "key": "g",
+          "effectiveKey": null
+        },
+        {
+          "type": "script",
+          "actionId": "script.test.7",
+          "name": "测试 7",
+          "key": "g",
+          "effectiveKey": null
+        }
+      ]
+    }
+  }
+}

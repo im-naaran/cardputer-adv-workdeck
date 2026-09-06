@@ -1,5 +1,6 @@
 #include <unity.h>
 #include <vector>
+#include "core/config_command_dispatcher.h"
 #include "application/codex/codex_config_commands.h"
 
 void commands_and_scheduler() {
@@ -15,9 +16,11 @@ void commands_and_scheduler() {
   const auto active=controller.state().inFlightExecId();
   adv::CodexConfigService service(store,controller,[&]{return now;});
   std::vector<std::string> out;
-  adv::CodexConfigCommands commands(service,controller,[&](const auto& line){out.push_back(line);},[&]{++diagnostics;});
+  adv::CodexConfigCommands commands(service,controller,[&](const auto& line){out.push_back(line);});
+  adv::ConfigCommandDispatcher dispatcher([&](const auto& line){return commands.execute(line);}, {},
+    [&](const auto& line){out.push_back(line);},[&]{++diagnostics;});
   std::string input;size_t offset=0;
-  auto poll=[&]{return commands.poll([&]()->int {return offset<input.size()?static_cast<unsigned char>(input[offset++]):-1;});};
+  auto poll=[&]{return dispatcher.poll([&]()->int {return offset<input.size()?static_cast<unsigned char>(input[offset++]):-1;});};
   input="codex.config.save {\"refreshIntervalSeconds\":60}";
   TEST_ASSERT_FALSE(poll());TEST_ASSERT_EQUAL(300000,controller.taskState().intervalMs);
   now=1000;input+="\r\n";TEST_ASSERT_TRUE(poll());
