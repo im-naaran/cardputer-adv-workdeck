@@ -1,5 +1,7 @@
+#if defined(ARDUINO) || defined(ADV_SETTINGS_INTEGRATION_TEST)
 #ifdef ARDUINO
 #include <Arduino.h>
+#endif
 
 #include "application/app_shell.h"
 #include "application/codex/codex_controller.h"
@@ -16,6 +18,7 @@
 #include "core/protocol_constants.h"
 #include "platform/ble_transport.h"
 #include "platform/display_adapter.h"
+#include "application/settings/settings_page.h"
 #include "platform/keyboard_adapter.h"
 #include "platform/monotonic_clock.h"
 
@@ -52,6 +55,14 @@ adv::ScriptsController scripts(execIds, enqueueRequest, cancelPending);
 adv::PlatformConfigFileStore configStore;
 adv::InputConfigService inputConfig(configStore, inputRouter);
 adv::CodexConfigService codexConfig(configStore, codex, [] { return clockSource.nowMs(); });
+adv::DisplayConfigService displayConfig(configStore);
+adv::WifiConfigService wifiConfig(configStore);
+adv::PlatformWifiAdapter wifiAdapter;
+adv::WifiService wifi(wifiConfig, wifiAdapter, clockSource);
+adv::SettingsController settings(displayConfig, codexConfig, codex, wifiConfig, wifi,
+                                 [](uint8_t value) { display.setBrightness(value); });
+adv::SettingsPage settingsPage(settings, display);
+
 
 void printTimeDiagnostic() {
   int64_t utc = 0;
@@ -100,44 +111,51 @@ void handleMessages() {
   }
 }
 
+void handleKey(const adv::KeyEvent& event, uint32_t now) {
+  // Fn is fully consumed before Alt, then per-module mapping and page input.
+  const auto routed = inputRouter.route(event, navigation.current(), settingsPage.textEditing(navigation.current()));
+  const auto previous = navigation.current();
+  if (routed.action == adv::InputAction::kNavigation) {
+    navigation.handleGlobal(routed.event);
+    if (navigation.current() != previous) {
+      codex.onPageChanged(navigation.current() == adv::Module::kCodex);
+      redrawRequested = true;
+    }
+    return;  // Switching pages preserves script requests, selection and feedback.
+  }
+  if (routed.action == adv::InputAction::kShortcut) {
+    scripts.executeByKey(routed.event.character, now);
+    redrawRequested = true;
+    return;
+  }
+  // Device settings remain usable before hello and across BLE disconnections.
+  if (settingsPage.handle(navigation.current(), routed)) {
+    redrawRequested = true;
+    return;
+  }
+  if (!session.ready()) return;
+  if (routed.action == adv::InputAction::kConsumed || routed.action == adv::InputAction::kPageKey) return;
+  if (navigation.current() == adv::Module::kCodex) {
+    if (routed.action == adv::InputAction::kDirection) {
+      if (routed.event.key == adv::Key::kUp) codexPage.scroll(-1, codex.state().windows().size());
+      if (routed.event.key == adv::Key::kDown) codexPage.scroll(1, codex.state().windows().size());
+    } else if (routed.action == adv::InputAction::kConfirm || routed.action == adv::InputAction::kCodexToggle) {
+      codex.onKey(routed.event, now);
+    }
+    redrawRequested = true;
+  } else if (navigation.current() == adv::Module::kScripts) {
+    if (routed.action == adv::InputAction::kConfirm) scripts.confirm(now);
+    if (routed.action == adv::InputAction::kDirection) {
+      if (routed.event.key == adv::Key::kUp) scripts.moveSelection(-1, now);
+      if (routed.event.key == adv::Key::kDown) scripts.moveSelection(1, now);
+    }
+    redrawRequested = true;
+  }
+}
+
 void handleKeyboard(uint32_t now) {
   keyboard.update();
-  for (const auto& event : keyboard.takePressedEvents()) {
-    // Fn is fully consumed before Alt, then per-module mapping and page input.
-    const auto routed = inputRouter.route(event, navigation.current());
-    const auto previous = navigation.current();
-    if (routed.action == adv::InputAction::kNavigation) {
-      navigation.handleGlobal(routed.event);
-      if (navigation.current() != previous) {
-        codex.onPageChanged(navigation.current() == adv::Module::kCodex);
-        redrawRequested = true;
-      }
-      continue;  // Switching pages preserves script requests, selection and feedback.
-    }
-    if (routed.action == adv::InputAction::kShortcut) {
-      scripts.executeByKey(routed.event.character, now);
-      redrawRequested = true;
-      continue;
-    }
-    if (!session.ready()) continue;
-    if (routed.action == adv::InputAction::kConsumed || routed.action == adv::InputAction::kPageKey) continue;
-    if (navigation.current() == adv::Module::kCodex) {
-      if (routed.action == adv::InputAction::kDirection) {
-        if (routed.event.key == adv::Key::kUp) codexPage.scroll(-1, codex.state().windows().size());
-        if (routed.event.key == adv::Key::kDown) codexPage.scroll(1, codex.state().windows().size());
-      } else if (routed.action == adv::InputAction::kConfirm || routed.action == adv::InputAction::kCodexToggle) {
-        codex.onKey(routed.event, now);
-      }
-      redrawRequested = true;
-    } else if (navigation.current() == adv::Module::kScripts) {
-      if (routed.action == adv::InputAction::kConfirm) scripts.confirm(now);
-      if (routed.action == adv::InputAction::kDirection) {
-        if (routed.event.key == adv::Key::kUp) scripts.moveSelection(-1, now);
-        if (routed.event.key == adv::Key::kDown) scripts.moveSelection(1, now);
-      }
-      redrawRequested = true;
-    }
-  }
+  for (const auto& event : keyboard.takePressedEvents()) handleKey(event, now);
 }
 
 void draw(uint32_t now) {
@@ -145,7 +163,8 @@ void draw(uint32_t now) {
   redrawRequested = false;
   shell.beginFrame(display, navigation.current(), display.batteryLevel(),
                    session.ready());
-  if (!session.ready()) shell.renderDisconnected(display);
+  if (navigation.current() == adv::Module::kSettings) settingsPage.render();
+  else if (!session.ready()) shell.renderDisconnected(display);
   else if (navigation.current() == adv::Module::kCodex) {
     codexPage.render(display, codex.state(), now, codex.taskState());
   }
@@ -159,9 +178,10 @@ void draw(uint32_t now) {
 void setup() {
   Serial.begin(115200);
   display.begin();
+  configStore.begin();
+  settings.loadBrightness();
   keyboard.begin();
   ble.begin();
-  configStore.begin();
   const uint32_t now = clockSource.nowMs();
   timeSync.begin(now);
   codex.begin(now);
@@ -172,6 +192,8 @@ void setup() {
   Serial.printf("config startup=%s activeIntervalSeconds=%lu\n",
                 adv::configStatusName(configResult.status),
                 static_cast<unsigned long>(codex.taskState().intervalMs / 1000));
+  settings.refreshCodex();
+  settings.loadWifi();  // Read only: no connection or scan on startup.
   const auto inputResult = inputConfig.reload();
   Serial.printf("input.config startup=%s active=%s\n", adv::configStatusName(inputResult.status),
                 adv::encodeInputConfig(inputConfig.active()).c_str());
@@ -224,6 +246,11 @@ void loop() {
   // newer completion time and mistakes the underflow for an expired interval.
   now = clockSource.nowMs();
   handleKeyboard(now);
+  // Settings saves/platform starts can take time; sample again before any timeout.
+  now = clockSource.nowMs();
+  // One shared Wi-Fi service advances even off-page or without a BLE session.
+  if (settings.tick(now)) redrawRequested = true;
+  now = clockSource.nowMs();
   const bool wasInFlight = codex.state().inFlight();
   const auto previousDirectory = scripts.state().directory;
   const auto previousExecution = scripts.state().execution;

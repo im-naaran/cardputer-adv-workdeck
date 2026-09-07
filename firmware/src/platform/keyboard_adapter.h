@@ -18,6 +18,8 @@ enum class Key {
   kDigit3,
   kDigit4,
   kCharacter,
+  kBackspace,
+  kTab,
 };
 
 struct KeyEvent {
@@ -28,12 +30,14 @@ struct KeyEvent {
   bool ctrl{false};
   bool shift{false};
   bool opt{false};
+  char text{0};  // Printable character, independent of the physical shortcut identity.
 };
 
 // Base-layer physical identities, independent of Caps Lock and the library's Fn layer.
 struct InputSnapshot {
   std::array<bool, 256> pressed{};
   bool fn{false}, alt{false}, ctrl{false}, shift{false}, opt{false};
+  std::array<char, 256> shifted{};
 };
 
 class KeyPressTracker {

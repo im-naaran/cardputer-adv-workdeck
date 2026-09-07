@@ -17,13 +17,17 @@ std::vector<KeyEvent> KeyPressTracker::update(const InputSnapshot& snapshot) {
   Key key = Key::kCharacter;
   switch (identity) {
     case '\r': key = Key::kEnter; break;
+    case '\b': key = Key::kBackspace; break;
+    case '\t': key = Key::kTab; break;
     case '1': key = Key::kDigit1; break;
     case '2': key = Key::kDigit2; break;
     case '3': key = Key::kDigit3; break;
     case '4': key = Key::kDigit4; break;
   }
+  // Resolve Shift after collecting all modifier keys, independent of scan order.
+  const char text = snapshot.shift ? snapshot.shifted[identity] : static_cast<char>(identity);
   return {{key, snapshot.fn, static_cast<char>(identity), snapshot.alt,
-           snapshot.ctrl, snapshot.shift, snapshot.opt}};
+           snapshot.ctrl, snapshot.shift, snapshot.opt, text}};
 }
 
 void KeyboardAdapter::begin() { tracker_ = KeyPressTracker{}; pending_.clear(); }
@@ -35,7 +39,8 @@ void KeyboardAdapter::update() {
   // isChange only compares key counts. Inspect every scan, including releases and
   // equal-count replacements. The base layer also preserves physical Fn+Enter.
   for (const auto& position : M5Cardputer.Keyboard.keyList()) {
-    const uint8_t value = M5Cardputer.Keyboard.getKeyValue(position).value_first;
+    const auto values = M5Cardputer.Keyboard.getKeyValue(position);
+    const uint8_t value = values.value_first;
     switch (value) {
       case KEY_FN: snapshot.fn = true; break;
       case KEY_LEFT_ALT: snapshot.alt = true; break;
@@ -43,7 +48,12 @@ void KeyboardAdapter::update() {
       case KEY_LEFT_SHIFT: snapshot.shift = true; break;
       case KEY_OPT: snapshot.opt = true; break;
       case KEY_ENTER: snapshot.pressed['\r'] = true; break;
-      default: snapshot.pressed[value] = true; break;
+      case KEY_BACKSPACE: snapshot.pressed['\b'] = true; break;
+      case KEY_TAB: snapshot.pressed['\t'] = true; break;
+      default:
+        snapshot.pressed[value] = true;
+        snapshot.shifted[value] = values.value_second;
+        break;
     }
   }
   const auto events = tracker_.update(snapshot);

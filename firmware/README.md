@@ -7,16 +7,16 @@ C++17、Arduino ESP32、PlatformIO，目标为 Cardputer-Adv（ESP32-S3）。依
 | 位置 | 职责 |
 | --- | --- |
 | `src/main.cpp` | 实例装配、任务注册、消息路由和主循环 |
-| `src/application/` | 页面外壳、Codex/脚本页面和控制器、授时、模块配置 |
+| `src/application/` | 页面外壳、Codex/脚本/设置页面和控制器、公共 Wi-Fi 服务、授时、模块配置 |
 | `src/core/` | 输入路由、串口分发、调度、会话、请求 ID、协议、发送队列与系统时间服务 |
-| `src/platform/` | BLE、键盘、屏幕、单调时钟与系统 UTC 平台适配 |
+| `src/platform/` | BLE、Wi-Fi、键盘、屏幕、文件系统、单调时钟与系统 UTC 平台适配 |
 | `test/` | Unity native 用例；假时钟及分片 sink 替代硬件 |
 
 页面负责输入和显示，控制器负责请求及状态，平台层处理硬件调用。新增页面复用 `AppShell`、`NavigationService`、`DisplayAdapter`；长期后台周期注册到 `ScheduledTaskService`。
 
 ## 主循环与会话
 
-执行顺序为 BLE 接收及代次处理 → 消息路由 → 串口配置分发 → 重新读取单调时间 → 键盘 → 控制器短时维护 → 调度器 tick → 单片发送 → 绘制。
+执行顺序为 BLE 接收及代次处理 → 消息路由 → 串口配置分发 → 重新读取单调时间 → 键盘 → 重新读取单调时间 → Wi-Fi tick → 重新读取单调时间 → 控制器短时维护 → 调度器 tick → 单片发送 → 绘制。
 
 BLE 回调只提交字节和连接状态，业务逻辑在主循环串行处理。消息处理后重新读取时间，避免响应记录的新时间与循环旧快照相减发生无符号下溢。分钟显示任务只置脏，实际绘制仍在主循环。
 
@@ -54,7 +54,7 @@ Codex、授时、脚本控制器共享 `ExecIdGenerator`。Codex 和授时各自
 
 文件限制 512 bytes，只接受整数 `refreshIntervalSeconds`（60～3600），拒绝未知字段和尾部额外内容。写入 `/config/codex.json.tmp` 后重读核对，通过 rename 替换正式文件，禁止先删除旧文件；检查 stdio 写入/flush/close 错误。正式文件重读或应用失败时保留旧运行周期并明确报告，不能把文件已保存当作已生效。
 
-`ConfigCommandDispatcher` 独占串口读行，按前缀交给 `CodexConfigCommands` 或 `InputConfigCommands`；行缓冲最大 576 bytes，每轮最多读取 64 bytes；超长行丢弃到换行，保留 `t` 诊断。主循环在消息处理后、tick 前调用，完成后重新取 now；配置变化置脏。未来 settings 直接调用相同服务，读取时展示文件值，保存时根据状态/changed 反馈并重绘。
+`ConfigCommandDispatcher` 独占串口读行，按前缀交给 `CodexConfigCommands` 或 `InputConfigCommands`；行缓冲最大 576 bytes，每轮最多读取 64 bytes；超长行丢弃到换行，保留 `t` 诊断。主循环在消息处理后、tick 前调用，完成后重新取 now；配置变化置脏。SettingsController 直接调用同一 CodexConfigService，展示保存与运行状态，不复制调度逻辑。
 
 LittleFS 使用原分区标签 `spiffs`，只设置 `board_build.filesystem = littlefs`。挂载使用 `begin(false)`，不自动格式化；普通读取不创建文件。首次部署与操作命令见 [项目 README](../README.md#adv-模块配置)，设备边界见 [配置规格的验收步骤](../specs/20260905_adv_module_runtime_config/tasks.md#task-08-真机配置持久化与即时生效验收)。
 
@@ -62,9 +62,9 @@ LittleFS 使用原分区标签 `spiffs`，只设置 `board_build.filesystem = li
 
 键盘每轮读取第一层物理键快照，不依赖只比较键数量的 `isChange()`。主键新按下产生一次事件；主键保持按下时增减修饰键不重复执行；同次新按下多个主键全部忽略，需释放重按。Fn+Enter 保留物理身份。
 
-输入统一经 `InputRouter`：Fn 系统组合 → Alt 全局动作 → 当前模块方向映射 → 页面输入。未知 Fn 组合被消费，只有 Codex 页的纯 Fn+Enter 开关自动刷新；Fn+Alt+数字仍切页，Fn+Alt+Enter 不响应。Alt 只接受没有 Ctrl/Shift/Opt 的单个字母；Caps Lock 不改变物理匹配，普通字母不执行。
+输入统一经 `InputRouter`：Fn 系统组合 → Alt 全局动作 → 设置文本编辑上下文（启用时）→ 当前模块方向映射 → 页面输入。未知 Fn 组合被消费，只有 Codex 页的纯 Fn+Enter 开关自动刷新；Fn+Alt+数字仍切页，Fn+Alt+Enter 不响应。Alt 只接受没有 Ctrl/Shift/Opt 的单个字母；Caps Lock 不改变物理匹配，普通字母不执行。
 
-无修饰 `; , . /` 默认分别映射上、左、下、右。Codex 上下滚动，脚本上下选择并跨页；当前页面没有左右业务操作。Fn+`,` / `/` 切栏，Fn+`;` / `.` 为系统保留组合，不滚动页面。剪贴板、设置只保留共同输入约定和全局快捷键。
+无修饰 `; , . /` 默认分别映射上、左、下、右。Codex 上下滚动，脚本上下选择并跨页；设置页左右调亮度，Wi-Fi 字段右键完整查看，查看页方向键翻页。Fn+`,` / `/` 切栏，Fn+`;` / `.` 为系统保留组合，不滚动页面。剪贴板保留共同输入约定和全局快捷键。设置编辑使用独立文本字符，支持 Shift；`; , . /` 和数字作为输入，不用于导航，Fn/Alt 仍优先。
 
 `/config/input.json` 为四模块各自配置，默认文件在 `data/config/input.json`。以下是串口命令，逐行发送且带换行：
 
@@ -78,6 +78,89 @@ input.config.save {}
 第二行只关闭脚本映射；最后一行恢复四模块默认开启。save 为完整替换语义，省略模块/字段均恢复 true，不是合并当前值。模块名为 `codex`、`scripts`、`clipboard`、`settings`；各模块只接受 boolean `directionMapping`，拒绝未知字段、非法类型及尾部垃圾，整份 JSON 最多 512 字节。
 
 保存复用 ConfigFileStore 的临时文件核对和替换，再重读应用；相同有效配置不重复写盘。`read` 输出文件值和 `active`，不修改运行值；`reload` 重读后应用。启动读取失败保留默认，运行中失败保留上一有效配置；`ReloadFailed` 表示文件可能已保存，可修复后 reload。普通按键和绘制不访问文件。无文件系统时不格式化，部署及覆盖边界见项目 README。
+
+## 设置操作
+
+`Fn+4` 进入，设置输入和绘制位于 BLE 离线拦截前。首页有“屏幕亮度”“Wi-Fi”“Codex自动刷新”。列表用上下或 Tab 选择，Enter 确认，Backspace 返回；关闭 `settings.directionMapping` 后仍可用 Tab/Enter/Backspace 完成操作。
+
+| 功能 | 操作及结果 |
+| --- | --- |
+| 亮度 | 左右逐档调整，边界停止；Tab 循环五档。20% / 40% / 60% / 80% / 100% 对应 51 / 102 / 153 / 204 / 255，默认第三档。调整立即应用并保存，同值不重复写入；失败保留亮度，Enter 重试保存 |
+| Codex 周期 | 选“分钟”按 Enter 编辑，Enter 完成编辑或 Tab 完成后移到保存项，再选“保存”。仅接受 1～60 整数分钟；非法值保留草稿。已有 90 秒等非整分钟值按秒显示，输入框留空，不自动覆盖 |
+| Wi-Fi 字段 | SSID、用户名、密码均明文；Enter 编辑，Enter 写回内存草稿，Tab 写回后移到下一字段，尚未写 Flash。支持大小写、数字、空格、符号；退格删除整个 UTF-8 字符；不裁剪首尾空格 |
+| 完整查看 | 字段焦点右键，或 Tab 到“查看完整SSID/用户名/密码”再 Enter。Tab 循环翻页，方向键逐页移动，Enter/Backspace 返回；编辑页显示尾部输入位置 |
+| 扫描网络 | 选择“扫描网络”，完成后 Enter 选中 SSID，只改 SSID，不改用户名/密码、不保存或连接。列表按信号排序、同名去重，最多 32 项；截断、失败或无结果可查“查看扫描结果”，也可“返回手动配置” |
+| 保存 | 校验当前草稿后保存一组 Wi-Fi 配置，不启用无线；格式合法的错误密码也可保存。保存失败保留旧有效快照，完整反馈见“查看操作及测试结果” |
+| 测试连接 | 使用当前草稿，不自动保存。认证完成且取得有效 IP 才成功，不探测公网；测试结果和 IP 是历史记录，修改凭据后提示重新测试，测试值与保存值不同时提示未保存 |
+| 重试关闭 | 设置自己的扫描/测试关闭失败时选择“重试关闭Wi-Fi”。其他模块持有连接时返回忙，不抢占或替其关闭 |
+
+SSID 为 1～32 字节有效 UTF-8，用户名 0～64 字节；禁止控制字符。用户名为空走普通认证：密码可为空（开放网络），否则为 8～63 个可打印 ASCII，或 64 位十六进制 PSK。用户名非空走无证书 PEAP，账号同时作为 identity 和 username，密码为 1～64 字节有效 UTF-8。没有网络类型选择或中文输入法；可扫描带入中文 SSID。编辑达到字节上限会拒绝新增字符，不截断原值。
+
+Wi-Fi 固定 AUTO：开机只加载配置，保存也不连接；扫描截止 15 秒，连接截止 30 秒，均为非阻塞状态机。扫描和设置测试终态释放并关闭 Wi-Fi，保留结果；无法确定认证失败原因时显示超时，不据此断言密码错误。切页、BLE 断线保留草稿/编辑状态，已启动操作继续；重启只恢复保存值。脚本短暂反馈消失后恢复设置页脚。
+
+| 配置文件 | 默认及恢复 |
+| --- | --- |
+| `/config/display.json` | `{"brightnessLevel":3}`，缺失/损坏时开机使用 60% |
+| `/config/wifi.json` | `{"ssid":"Example","username":"","password":""}`，缺失/损坏时开机未配置；示例是开放网络 |
+| `/config/codex.json` | `{"refreshIntervalSeconds":300}`，缺失/损坏时开机使用 5 分钟 |
+
+三项独立保存，不相互重置。Codex 改周期从生效时刻等待完整周期；同值不重设计时，不改变自动开关/缓存/在途请求。`Fn+Enter` 仍仅在 Codex 页生效，其开关重启恢复默认开启。
+
+“已保存”“保存失败”“文件可能已保存，读取失败”“已保存但应用失败”含义不同，后两者应修复存储/应用问题后重试；亮度失败时仍保持当前生效档位。运行中读失败保留已有有效值并提示。保存复用临时文件写入、校验和 rename，不自动格式化。已有 LittleFS 首次保存即可创建新增文件；仅首次尚未部署文件系统时按根 README 部署 `firmware/data/`，`uploadfs` 覆盖整个分区，普通 `upload` 在未擦除/未变更分区时保留配置。
+
+## 公共 Wi-Fi 接口
+
+`application/wifi/WifiService` 独立于页面。main 只装配一个实例，SettingsController::tick 由主循环调用并驱动该实例；未来模块使用同一实例，不再单独 tick 或直接调用平台 WiFi API。配置查询不启用无线，没有业务需求时不连接、不重试、不按帧读文件。
+
+| 接口 | 契约 |
+| --- | --- |
+| `configurationStatus()` | 已加载配置的 ConfigStatus；不读文件、不暴露凭据、不保证可连 |
+| `canConnect()` | Ready / NotConfigured / InvalidConfig / StorageError / Busy / ReleaseFailed / IdsExhausted；Ready 只表示允许尝试 |
+| `connect()` | 发起前重新读取已保存配置，返回 WifiRequest；拒绝时 requestId 为 0，接受时为非零 uint64_t，连接异步完成 |
+| `status(requestId)` | 返回该请求的 phase、outcome、SSID/IP；过期或 0 身份为 expired。仅当前/最近一次请求保留于服务 |
+| `isConnected()` | 当前实际连接快照具有有效 IP，不以历史成功判定在线 |
+| `close(requestId)` | 仅本次持有者可取消/关闭；成功为 kOff，关闭失败为 kReleaseFailed，保留身份供显式重试 |
+| `scan()` / `test(draft)` | 同一互斥服务；扫描不连接，测试不保存，两者终态自动关闭；模块 connect 成功保持连接 |
+| `scanResults()` | 最多 32 项，含 count/truncated；下一次扫描会替换，需长期保留时自行复制 |
+| `tick(nowMs)` | 由既有主循环推进阶段和超时，与页面及 BLE 会话无关 |
+
+典型调用分三个时机，下列为使用同一 `wifi` 实例的片段：
+
+```cpp
+// 1. 用户或业务明确请求时执行一次。Ready 是提示，connect 才做最终检查。
+uint64_t requestId = 0;  // 调用模块持有，不使用 BLE execId。
+if (wifi.canConnect() == adv::WifiAvailability::kReady) {
+  const auto request = wifi.connect();
+  requestId = request.requestId;
+  // requestId == 0：按 request.availability 显示原因，本次不继续业务。
+}
+```
+
+```cpp
+// 2. 后续循环查询，不能 while 等待。主循环已经驱动 wifi.tick。
+const auto state = wifi.status(requestId);
+if (!state.expired && state.phase == adv::WifiPhase::kConnected && wifi.isConnected()) {
+  // 调用模块可推进自己的非阻塞业务；成功连接不会因 30 秒截止而被关闭。
+}
+// kConnecting：继续等待；kOff：检查 outcome 区分失败/超时/取消等。
+// kReleaseFailed：停止业务，保留 requestId，等待显式重试关闭。
+// expired：请求已不属于自己，清除本地身份，不关闭其他调用者的新请求。
+```
+
+```cpp
+// 3. 业务完成、出错或用户取消时，显式关闭；关闭失败后的重试也走这里。
+if (requestId != 0) {
+  const auto closed = wifi.close(requestId);
+  if (closed.expired || closed.phase == adv::WifiPhase::kOff) requestId = 0;
+  // kReleaseFailed 时保留身份并报告关闭失败，不在每帧无间隔重试。
+}
+```
+
+阶段为 `kOff / kScanning / kConnecting / kConnected / kReleasing / kReleaseFailed`，结果为 `kNone / kSucceeded / kFailed / kTimedOut / kDisconnected / kCancelled`。关闭不会覆盖结果，成功测试可以同时为 `kOff + kSucceeded`，此时历史 IP 不代表当前在线。模块连接失败、超时、使用中断线自动清理，无后台重连；模块成功后有显式关闭责任。
+
+单一使用者互斥，不抢占、不排队；保存新配置不打断在途连接，下一次 connect 使用新值。同一已关闭身份重复关闭不再操作平台，旧身份不能关闭新连接，身份耗尽拒绝分配。公开接口没有永久联网开关，本期没有真实业务模块使用 Wi-Fi。
+
+设备验收及尚未覆盖的行为见 [设置验收记录](../specs/20260906_settings_module/acceptance.md)。
 
 ## 脚本页和全局反馈
 

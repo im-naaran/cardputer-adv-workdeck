@@ -14,7 +14,7 @@ struct RoutedInput {
 };
 class InputRouter {
  public:
-  RoutedInput route(const KeyEvent& event, Module module) const;
+  RoutedInput route(const KeyEvent& event, Module module, bool textEditing = false) const;
   void applyConfig(const InputConfig& config) { config_ = config; }
   const InputConfig& config() const { return config_; }
  private:

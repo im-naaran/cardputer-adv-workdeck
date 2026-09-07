@@ -60,4 +60,51 @@ void routing_matrix() {
   TEST_ASSERT_EQUAL_INT((int)InputAction::kConsumed,(int)router.route({Key::kCharacter,true,'5'},Module::kCodex).action);
   TEST_ASSERT_EQUAL('g',router.route({Key::kCharacter,false,'G',true},Module::kSettings).event.character);
 }
-int main(int,char**) { UNITY_BEGIN(); RUN_TEST(edges); RUN_TEST(routing_matrix); return UNITY_END(); }
+void text_editing() {
+  InputRouter router;
+  KeyPressTracker tracker;
+  // A miniature hardware map exercises the same two-layer snapshot used by the adapter.
+  for (auto pair : {std::pair<char,char>{'a','A'}, {'1','!'}, {'2','@'}, {'3','#'}, {'4','$'},
+      {';',':'}, {',','<'}, {'.','>'}, {'/','?'}, {' ',' '}}) {
+    for (bool shift : {false,true}) {
+      tracker.update({});
+      InputSnapshot snapshot;
+      snapshot.pressed[static_cast<unsigned char>(pair.first)]=true;
+      snapshot.shifted[static_cast<unsigned char>(pair.first)]=pair.second;
+      snapshot.shift=shift;
+      auto event=tracker.update(snapshot).at(0);
+      TEST_ASSERT_EQUAL(pair.first,event.character);
+      TEST_ASSERT_EQUAL(shift?pair.second:pair.first,event.text);
+      auto result=router.route(event,Module::kSettings,true);
+      TEST_ASSERT_TRUE(result.action==InputAction::kPageKey);
+      TEST_ASSERT_EQUAL(event.text,result.event.text);
+      TEST_ASSERT_TRUE(tracker.update(snapshot).empty());
+      // Changing just Shift while holding a key must not create another character.
+      snapshot.shift=!shift;
+      TEST_ASSERT_TRUE(tracker.update(snapshot).empty());
+    }
+  }
+  for(char control : {'\r','\b','\t'}) {
+    tracker.update({}); InputSnapshot snapshot; snapshot.pressed[control]=true;
+    auto event=tracker.update(snapshot).at(0);
+    const auto expected=control=='\r'?Key::kEnter:control=='\b'?Key::kBackspace:Key::kTab;
+    TEST_ASSERT_TRUE(event.key==expected);
+    TEST_ASSERT_TRUE(router.route(event,Module::kSettings,true).action==
+        (control=='\r'?InputAction::kConfirm:InputAction::kPageKey));
+  }
+  KeyEvent letter{Key::kCharacter,false,'g',true,false,false,false,'g'};
+  TEST_ASSERT_TRUE(router.route(letter,Module::kSettings,true).action==InputAction::kShortcut);
+  letter.shift=true;
+  TEST_ASSERT_TRUE(router.route(letter,Module::kSettings,true).action==InputAction::kConsumed);
+  letter.alt=false; letter.ctrl=true;
+  TEST_ASSERT_TRUE(router.route(letter,Module::kSettings,true).action==InputAction::kConsumed);
+  letter.ctrl=false; letter.opt=true;
+  TEST_ASSERT_TRUE(router.route(letter,Module::kSettings,true).action==InputAction::kConsumed);
+  TEST_ASSERT_TRUE(router.route({Key::kDigit4,true,'4'},Module::kSettings,true).action==InputAction::kNavigation);
+  TEST_ASSERT_TRUE(router.route({Key::kCharacter,true,','},Module::kSettings,true).action==InputAction::kNavigation);
+  TEST_ASSERT_TRUE(router.route({Key::kEnter,true,'\r'},Module::kSettings,true).action==InputAction::kConsumed);
+  TEST_ASSERT_TRUE(router.route({Key::kEnter,true,'\r'},Module::kCodex,true).action==InputAction::kCodexToggle);
+  InputConfig config; config.directionMapping[3]=false; router.applyConfig(config);
+  TEST_ASSERT_TRUE(router.route({Key::kCharacter,false,';',false,false,false,false,';'},Module::kSettings,true).action==InputAction::kPageKey);
+}
+int main(int,char**) { UNITY_BEGIN(); RUN_TEST(edges); RUN_TEST(routing_matrix); RUN_TEST(text_editing); return UNITY_END(); }

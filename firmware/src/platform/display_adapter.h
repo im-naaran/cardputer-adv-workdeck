@@ -14,6 +14,7 @@ enum class FontStyle {
 class DisplayAdapter {
  public:
   void begin();
+  void setBrightness(uint8_t brightness);
   int width() const;
   int height() const;
   int batteryLevel() const;

@@ -37,6 +37,14 @@ void DisplayAdapter::begin() {
 #endif
 }
 
+void DisplayAdapter::setBrightness(uint8_t brightness) {
+#ifdef ARDUINO
+  M5Cardputer.Display.setBrightness(brightness);
+#else
+  (void)brightness;
+#endif
+}
+
 int DisplayAdapter::width() const {
 #ifdef ARDUINO
   return M5Cardputer.Display.width();
