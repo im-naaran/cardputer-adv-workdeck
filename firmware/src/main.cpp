@@ -118,6 +118,7 @@ void handleKey(const adv::KeyEvent& event, uint32_t now) {
   if (routed.action == adv::InputAction::kNavigation) {
     navigation.handleGlobal(routed.event);
     if (navigation.current() != previous) {
+      if (previous == adv::Module::kSettings) settingsPage.leave();
       codex.onPageChanged(navigation.current() == adv::Module::kCodex);
       redrawRequested = true;
     }
@@ -129,7 +130,7 @@ void handleKey(const adv::KeyEvent& event, uint32_t now) {
     return;
   }
   // Device settings remain usable before hello and across BLE disconnections.
-  if (settingsPage.handle(navigation.current(), routed)) {
+  if (settingsPage.handle(navigation.current(), routed, now)) {
     redrawRequested = true;
     return;
   }
@@ -250,6 +251,7 @@ void loop() {
   now = clockSource.nowMs();
   // One shared Wi-Fi service advances even off-page or without a BLE session.
   if (settings.tick(now)) redrawRequested = true;
+  if (settingsPage.tick(clockSource.nowMs())) redrawRequested = true;
   now = clockSource.nowMs();
   const bool wasInFlight = codex.state().inFlight();
   const auto previousDirectory = scripts.state().directory;

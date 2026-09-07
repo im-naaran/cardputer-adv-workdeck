@@ -72,7 +72,7 @@ bool SettingsController::saveMinutes(const std::string& text) {
     codexMessage_ = "请输入1至60整数分钟";
     return false;
   }
-  // Conversion only occurs on explicit save; 90-second legacy values stay exact.
+  // The page submits whole minutes only after an explicit adjustment.
   const auto result = config_.save(encodeCodexConfig({minutes * 60}));
   codexMessage_ = storageMessage(result.status);
   savedCodex_ = config_.read();
@@ -178,8 +178,8 @@ std::string SettingsController::wifiDetails() const {
   }
   if (haveTest_) {
     // Historical IP is evidence of this attempt, never an online indicator.
-    text += "\n上次测试：" + outcomeText(lastTest_.outcome) + "\nSSID：" + tested_.ssid;
-    if (!lastTest_.ip.empty()) text += "\n测试IP：" + lastTest_.ip;
+    text += "\n上次测试：" + outcomeText(lastTest_.outcome);
+    if (!lastTest_.ip.empty()) text += "\n上次测试IP：" + lastTest_.ip;
     if (lastTest_.phase == WifiPhase::kOff) text += "\n测试已结束，Wi-Fi已关闭";
     if (lastTest_.phase == WifiPhase::kReleaseFailed) text += "\nWi-Fi关闭失败，请重试关闭";
     if (!(draft_ == tested_)) text += "\n配置已修改，需重新测试";

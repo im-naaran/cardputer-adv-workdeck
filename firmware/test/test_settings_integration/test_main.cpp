@@ -105,5 +105,17 @@ void actual_main_offline_lifecycle() {
   TEST_ASSERT_TRUE(wifi.close(moduleRequest.requestId).expired);
   TEST_ASSERT_TRUE(wifi.close(next.requestId).phase==WifiPhase::kOff);
 
+  // Page changes flush pending automatic saves through the actual input dispatch.
+  handleKey({Key::kDigit4,true},clockSource.now);
+  handleKey({Key::kBackspace},clockSource.now);
+  handleKey({Key::kTab},clockSource.now);handleKey({Key::kEnter},clockSource.now);
+  handleKey({Key::kRight},clockSource.now);
+  TEST_ASSERT_EQUAL(60,settings.intervalSeconds());
+  handleKey({Key::kDigit1,true},clockSource.now);
+  TEST_ASSERT_EQUAL(120,settings.intervalSeconds());
+  handleKey({Key::kDigit4,true},clockSource.now);
+  handleKey({Key::kRight},clockSource.now);
+  clockSource.now+=600;loop();TEST_ASSERT_EQUAL(180,settings.intervalSeconds());
+
 }
 int main(int,char**) { UNITY_BEGIN();RUN_TEST(actual_main_offline_lifecycle);return UNITY_END(); }

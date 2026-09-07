@@ -21,8 +21,8 @@ std::string intervalText(uint32_t seconds) {
 void SettingsPage::enter(SettingsScreen screen) {
   screen_ = screen; focus_ = 0;
   if (screen == SettingsScreen::kCodex) {
-    controller_.refreshCodex();
     if (!minutesDirty_) {
+      controller_.refreshCodex();
       const auto seconds = controller_.intervalSeconds();
       minutes_ = seconds % 60 ? "" : std::to_string(seconds / 60);
     }
@@ -30,41 +30,65 @@ void SettingsPage::enter(SettingsScreen screen) {
   if (screen == SettingsScreen::kWifi) controller_.refreshWifi();
 }
 void SettingsPage::edit(size_t field) {
-  parent_ = screen_; returnFocus_ = focus_; field_ = field;
-  editor_ = parent_ == SettingsScreen::kCodex ? minutes_ : fieldValue(controller_.draft(), field);
-  editMessage_.clear(); screen_ = SettingsScreen::kEditor;
+  field_ = field; editor_ = fieldValue(controller_.draft(), field);
+  editMessage_.clear(); editing_ = true;
 }
-void SettingsPage::view(size_t field) {
-  parent_ = screen_; returnFocus_ = focus_; field_ = field; viewPage_ = 0;
+void SettingsPage::view() {
+  parent_ = screen_; returnFocus_ = focus_; viewPage_ = 0;
   screen_ = SettingsScreen::kViewer;
 }
+void SettingsPage::feedback(const std::string& text) {
+  feedback_ = text; feedbackAt_ = now_;
+}
+void SettingsPage::savePending() {
+  saveScheduled_ = false;
+  if (!minutesDirty_) return;
+  minutesDirty_ = !controller_.saveMinutes(minutes_);
+  feedback(controller_.codexMessage());
+}
+void SettingsPage::leave() { savePending(); }
+bool SettingsPage::tick(uint32_t now) {
+  now_ = now;
+  bool changed = false;
+  if (saveScheduled_ && uint32_t(now - changedAt_) >= 600) {
+    savePending(); changed = true;
+  }
+  if (!feedback_.empty() && uint32_t(now - feedbackAt_) >= 2500) {
+    feedback_.clear(); changed = true;
+  }
+  return changed;
+}
 void SettingsPage::back() {
+  if (screen_ == SettingsScreen::kCodex) savePending();
   if (screen_ == SettingsScreen::kViewer) { screen_ = parent_; focus_ = returnFocus_; }
   else if (screen_ == SettingsScreen::kScan) { screen_ = SettingsScreen::kWifi; focus_ = 3; }
   else { screen_ = SettingsScreen::kHome; focus_ = homeFocus_; }
+  feedback_.clear();
 }
-bool SettingsPage::handle(Module module, const RoutedInput& input) {
+bool SettingsPage::handle(Module module, const RoutedInput& input, uint32_t now) {
+  now_ = now;
   if (module != Module::kSettings || input.action == InputAction::kConsumed ||
       input.action == InputAction::kNavigation || input.action == InputAction::kShortcut) return false;
   const auto key = input.event.key;
-  if (screen_ == SettingsScreen::kEditor) {
+  if (editing_) {
     if (key == Key::kEnter || key == Key::kTab) {
-      if (parent_ == SettingsScreen::kCodex) { minutes_ = editor_; minutesDirty_ = true; }
-      else controller_.setField(field_, editor_);
-      screen_ = parent_; focus_ = returnFocus_;
-      if (key == Key::kTab) focus_ = parent_ == SettingsScreen::kWifi ? (field_ + 1) % 3 : 1;
+      controller_.setField(field_, editor_); editing_ = false;
+      if (key == Key::kTab) { focus_ = (field_ + 1) % 3; edit(focus_); }
     } else if (key == Key::kBackspace) { eraseLast(editor_); editMessage_.clear(); }
     else if (input.event.text >= 32 && input.event.text <= 126) {
-      const size_t limit = parent_ == SettingsScreen::kCodex ? 16 : field_ == 0 ? 32 : 64;
-      if (editor_.size() >= limit) editMessage_ = "已达字节上限，未添加";
+      const size_t limit = field_ == 0 ? 32 : 64;
+      if (editor_.size() >= limit) editMessage_ = "已达字节上限";
       else { editor_ += input.event.text; editMessage_.clear(); }
     }
     return true;
   }
   if (screen_ == SettingsScreen::kViewer) {
-    if (key == Key::kEnter || key == Key::kBackspace) back();
+    const bool retry = controller_.operation().phase == WifiPhase::kReleaseFailed && !controller_.operation().expired;
+    if (key == Key::kBackspace || (key == Key::kEnter && !retry)) back();
+    else if (key == Key::kEnter) controller_.retryClose();
     else {
-      const size_t count = std::max<size_t>(1, (wrap(viewText()).size() + 2) / 3);
+      const size_t perPage = retry ? 4 : 5;
+      const size_t count = std::max<size_t>(1, (wrap(viewText()).size() + perPage - 1) / perPage);
       if (key == Key::kTab) viewPage_ = (viewPage_ + 1) % count;
       if (key == Key::kRight || key == Key::kDown) viewPage_ = std::min(viewPage_ + 1, count - 1);
       if ((key == Key::kLeft || key == Key::kUp) && viewPage_) --viewPage_;
@@ -73,53 +97,59 @@ bool SettingsPage::handle(Module module, const RoutedInput& input) {
   }
   if (key == Key::kBackspace) { back(); return true; }
   if (screen_ == SettingsScreen::kBrightness) {
-    int level = controller_.brightnessLevel();
-    if (key == Key::kLeft || key == Key::kUp) controller_.setBrightness(level - 1);
-    if (key == Key::kRight || key == Key::kDown) controller_.setBrightness(level + 1);
-    if (key == Key::kTab) controller_.setBrightness(level % 5 + 1);
-    if (key == Key::kEnter) controller_.setBrightness(level);
+    const int level = controller_.brightnessLevel();
+    int next = level;
+    if (key == Key::kLeft || key == Key::kUp) next = std::max(1, level - 1);
+    if (key == Key::kRight || key == Key::kDown) next = std::min(5, level + 1);
+    if (key == Key::kTab) next = level % 5 + 1;
+    if (next != level) { controller_.setBrightness(next); feedback(controller_.displayMessage()); }
+    return true;
+  }
+  if (screen_ == SettingsScreen::kCodex) {
+    const int seconds = minutes_.empty() ? controller_.intervalSeconds() : std::stoi(minutes_) * 60;
+    int next = 0;
+    if (key == Key::kLeft || key == Key::kUp) next = std::max(1, (seconds - 1) / 60);
+    if (key == Key::kRight || key == Key::kDown) next = std::min(60, seconds / 60 + 1);
+    if (key == Key::kTab) next = seconds / 60 % 60 + 1;
+    if (next && next * 60 != seconds) {
+      minutes_ = std::to_string(next); minutesDirty_ = true;
+      saveScheduled_ = true; changedAt_ = now; feedback_.clear();
+    }
     return true;
   }
   const auto count = rows().size();
   focus_ = std::min(focus_, count - 1);
+  const auto previousFocus = focus_;
   if (key == Key::kTab) focus_ = (focus_ + 1) % count;
   if (key == Key::kDown && focus_ + 1 < count) ++focus_;
   if (key == Key::kUp && focus_) --focus_;
-  // A visible view action is also reachable with Tab when direction mapping is off.
-  if (screen_ == SettingsScreen::kWifi && focus_ < 3 && key == Key::kRight) view(focus_);
+  if (focus_ != previousFocus) feedback_.clear();
   if (key != Key::kEnter) return true;
+  feedback_.clear();
   if (screen_ == SettingsScreen::kHome) {
     homeFocus_ = focus_;
     enter(focus_ == 0 ? SettingsScreen::kBrightness : focus_ == 1 ? SettingsScreen::kWifi : SettingsScreen::kCodex);
-  } else if (screen_ == SettingsScreen::kCodex) {
-    if (focus_ == 0) edit(0);
-    else if (focus_ == 1) { if (controller_.saveMinutes(minutes_)) minutesDirty_ = false; }
-    else view(3);
   } else if (screen_ == SettingsScreen::kWifi) {
     if (focus_ < 3) edit(focus_);
-    else if (focus_ == 3) { if (controller_.scan()) enter(SettingsScreen::kScan); }
-    else if (focus_ == 4) controller_.saveWifi();
-    else if (focus_ == 5) { controller_.test(); view(3); }
-    else if (focus_ == 6) view(3);
-    else if (focus_ < 10) view(focus_ - 7);
-    else { controller_.retryClose(); view(3); }
+    else if (focus_ == 3) { if (controller_.scan()) enter(SettingsScreen::kScan); else feedback(controller_.wifiMessage()); }
+    else if (focus_ == 4) { controller_.saveWifi(); feedback(controller_.wifiMessage()); }
+    else if (focus_ == 5) { controller_.test(); view(); }
+    else view();
   } else if (screen_ == SettingsScreen::kScan) {
     if (focus_ < controller_.scans().count) {
       controller_.selectNetwork(focus_); screen_ = SettingsScreen::kWifi; focus_ = 0;
-    } else if (focus_ == controller_.scans().count) controller_.scan();
+    } else if (focus_ == controller_.scans().count) { controller_.scan(); feedback(controller_.wifiMessage()); }
     else if (focus_ == controller_.scans().count + 1) back();
-    else view(3);
+    else view();
   }
   return true;
 }
 std::vector<std::string> SettingsPage::rows() const {
   switch (screen_) {
     case SettingsScreen::kHome: return {"屏幕亮度 " + std::to_string(controller_.brightnessLevel()*20) + "%",
-        "Wi-Fi " + controller_.wifiSummary(), "Codex自动刷新 " + intervalText(controller_.intervalSeconds())};
-    case SettingsScreen::kCodex: return {"分钟：" + (minutes_.empty() ? "待输入" : minutes_), "保存", "查看保存及运行状态"};
+        "Wi-Fi " + controller_.wifiSummary(), "Codex自动刷新 " + (minutesDirty_ ? minutes_ + "分钟 未保存" : intervalText(controller_.intervalSeconds()))};
     case SettingsScreen::kWifi: return {"SSID：" + controller_.draft().ssid, "用户名：" + controller_.draft().username,
-        "密码：" + controller_.draft().password, "扫描网络", "保存", "测试连接", "查看操作及测试结果",
-        "查看完整SSID", "查看完整用户名", "查看完整密码", "重试关闭Wi-Fi"};
+        "密码：" + controller_.draft().password, "扫描网络", "保存", "测试连接", "查看网络信息"};
     case SettingsScreen::kScan: {
       std::vector<std::string> result;
       for (size_t i = 0; i < controller_.scans().count; ++i) {
@@ -133,12 +163,6 @@ std::vector<std::string> SettingsPage::rows() const {
   }
 }
 std::string SettingsPage::viewText() const {
-  if (parent_ == SettingsScreen::kCodex) {
-    const auto& saved = controller_.savedCodex();
-    return controller_.codexMessage() + "\n当前运行：" + intervalText(controller_.intervalSeconds()) +
-        (saved.status == ConfigStatus::kOk ? "\n文件周期：" + intervalText(saved.config.refreshIntervalSeconds) : "");
-  }
-  if (field_ < 3) return std::string(fields[field_]) + "：\n" + fieldValue(controller_.draft(), field_);
   return controller_.wifiDetails();
 }
 std::vector<std::string> SettingsPage::wrap(const std::string& text) const {
@@ -158,51 +182,71 @@ std::vector<std::string> SettingsPage::wrap(const std::string& text) const {
   lines.push_back(line);
   return lines;
 }
-void SettingsPage::footer(const std::string& text) {
-  const auto lines = wrap(text);
-  for (size_t i = 0; i < lines.size() && i < 2; ++i)
-    display_.drawText(lines[i], 8, 101 + i * 17, color::kMuted, FontStyle::kChinese);
-}
 void SettingsPage::render() {
-  std::string title = "设置";
-  if (screen_ == SettingsScreen::kBrightness) title = "亮度 Tab调整 Enter重试";
-  if (screen_ == SettingsScreen::kCodex) title = "当前 " + intervalText(controller_.intervalSeconds());
-  if (screen_ == SettingsScreen::kWifi) title = "Wi-Fi 明文配置";
-  if (screen_ == SettingsScreen::kScan) title = "扫描网络 " + controller_.wifiSummary();
-  if (screen_ == SettingsScreen::kEditor) title = parent_ == SettingsScreen::kCodex ? "编辑分钟（1至60）" : std::string("编辑") + fields[field_];
-  if (screen_ == SettingsScreen::kViewer) title = "完整查看";
-  display_.drawText(display_.fitText(title, display_.width()-16), 8, 25, color::kAccent, FontStyle::kChinese);
+  const int width = display_.width();
+  auto draw = [&](const std::string& text, int y, uint16_t color = color::kText) {
+    display_.drawText(display_.fitText(text, width - 16), 8, y, color, FontStyle::kChinese);
+  };
   if (screen_ == SettingsScreen::kBrightness) {
+    draw("亮度", 25, color::kAccent);
     for (int i = 1; i <= 5; ++i) {
       const bool selected = controller_.brightnessLevel() == i;
       display_.fillRoundRect(8+(i-1)*45, 51, 42, 30, 4, selected ? color::kAccent : color::kSurface);
       display_.drawText(std::to_string(i*20)+"%", 11+(i-1)*45, 58, selected ? color::kAccentText : color::kText, FontStyle::kSmall);
     }
-    footer(controller_.displayMessage()); return;
-  }
-  if (screen_ == SettingsScreen::kEditor || screen_ == SettingsScreen::kViewer) {
-    const auto lines = wrap(screen_ == SettingsScreen::kEditor ? editor_ + "_" : viewText());
-    const size_t count = std::max<size_t>(1, (lines.size()+2)/3);
-    viewPage_ = std::min(viewPage_, count-1);
-    const size_t start = screen_ == SettingsScreen::kEditor ? (lines.size() > 3 ? lines.size()-3 : 0) : viewPage_*3;
-    for (size_t i = start; i < lines.size() && i < start+3; ++i)
-      display_.drawText(lines[i], 8, 45+(i-start)*18, color::kText, FontStyle::kChinese);
-    if (screen_ == SettingsScreen::kEditor) footer(editMessage_.empty() ? "Enter完成 Tab下一项" : editMessage_);
-    else footer(std::to_string(viewPage_+1)+"/"+std::to_string(count)+" Tab翻页 Enter返回");
+    if (!feedback_.empty()) draw(feedback_, 86, color::kMuted);
     return;
   }
-  const auto items = rows(); focus_ = std::min(focus_, items.size()-1);
-  const size_t start = focus_ / 3 * 3;
-  for (size_t i = start; i < items.size() && i < start+3; ++i) {
-    const int y = 44+(i-start)*18;
-    if (i == focus_) display_.fillRoundRect(4, y, display_.width()-8, 18, 3, color::kSurface);
-    display_.drawText(display_.fitText(items[i], display_.width()-16), 8, y,
-                      i == focus_ ? color::kAccent : color::kText, FontStyle::kChinese);
+  if (screen_ == SettingsScreen::kCodex) {
+    draw("Codex自动刷新", 25, color::kAccent);
+    draw("<  " + (minutes_.empty() ? intervalText(controller_.intervalSeconds()) : minutes_ + "分钟") + "  >", 51);
+    if (minutesDirty_ && !saveScheduled_) draw(controller_.codexMessage(), 75, color::kRed);
+    else if (!feedback_.empty()) draw(feedback_, 75, color::kMuted);
+    return;
   }
-  if (screen_ == SettingsScreen::kWifi) {
-    footer(focus_ < 3 ? "Enter编辑 右键完整查看\nTab下一项 退格返回" : controller_.wifiMessage());
-  } else if (screen_ == SettingsScreen::kCodex) footer(controller_.codexMessage());
-  else if (screen_ == SettingsScreen::kScan) footer(controller_.scans().truncated ? "仅显示较强32项，详见结果" : "Enter选择 Tab下一项\n退格返回，可手动输入");
-  else footer("Tab选择 Enter进入\n退格返回");
+  if (screen_ == SettingsScreen::kViewer) {
+    const bool retry = controller_.operation().phase == WifiPhase::kReleaseFailed && !controller_.operation().expired;
+    const size_t perPage = retry ? 4 : 5;
+    const auto lines = wrap(viewText());
+    const size_t count = std::max<size_t>(1, (lines.size()+perPage-1)/perPage);
+    viewPage_ = std::min(viewPage_, count-1);
+    draw("网络信息 " + std::to_string(viewPage_+1)+"/"+std::to_string(count), 25, color::kAccent);
+    for (size_t i = viewPage_*perPage; i < lines.size() && i < (viewPage_+1)*perPage; ++i)
+      draw(lines[i], 44+(i%perPage)*18);
+    if (retry) {
+      display_.fillRoundRect(4, 116, width-8, 18, 3, color::kSurface);
+      draw("重试关闭Wi-Fi", 116, color::kAccent);
+    }
+    return;
+  }
+  const bool isHome = screen_ == SettingsScreen::kHome;
+  if (!isHome) draw(screen_ == SettingsScreen::kWifi ? "Wi-Fi" : "扫描网络 " + controller_.wifiSummary(), 25, color::kAccent);
+  const auto items = rows(); focus_ = std::min(focus_, items.size()-1);
+  const size_t visible = isHome ? 3 : 5;
+  const size_t start = focus_ < visible ? 0 : focus_ - visible + 1;
+  for (size_t i = start; i < items.size() && i < start+visible; ++i) {
+    const int y = (isHome ? 27 : 44)+(i-start)*18;
+    if (i == focus_) display_.fillRoundRect(4, y, width-8, 18, 3, color::kSurface);
+    if (screen_ == SettingsScreen::kWifi && i < 3) {
+      const std::string label = std::string(fields[i])+"：";
+      const int x = 8 + display_.textWidth(label, FontStyle::kChinese);
+      draw(label, y, i == focus_ ? color::kAccent : color::kText);
+      std::string value = editing_ && i == field_ ? editor_ + "_" : fieldValue(controller_.draft(), i);
+      if (editing_ && i == field_) {
+        while (!value.empty() && display_.textWidth(value, FontStyle::kChinese) > width-x-8) {
+          size_t end = 1;
+          while (end < value.size() && (static_cast<unsigned char>(value[end]) & 0xc0) == 0x80) ++end;
+          value.erase(0, end);
+        }
+        display_.drawRect(x-2, y, width-x-4, 18, editMessage_.empty() ? color::kAccent : color::kRed);
+        if (!editMessage_.empty()) value = editMessage_;
+      } else {
+        display_.drawRect(x-2, y, width-x-4, 18, color::kBorder);
+        value = display_.fitText(value, width-x-8);
+      }
+      display_.drawText(value, x, y, color::kText, FontStyle::kChinese);
+    } else draw(i == focus_ && !feedback_.empty() ? feedback_ : items[i], y, i == focus_ ? color::kAccent : color::kText);
+  }
+  if (isHome) draw("↑↓选择 enter进入 退格返回", display_.height()-18, color::kMuted);
 }
 }  // namespace adv
