@@ -280,3 +280,160 @@ async def test_stop_event_cancels_blocked_connected_session():
     stop.set()
     await asyncio.wait_for(task, 0.1)
     assert transport.disconnected
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('stage', ['scan', 'connect', 'delay', 'services', 'notify'])
+async def test_stop_cancels_each_connection_stage_and_cleans_client(stage):
+    entered = asyncio.Event()
+    cancelled = asyncio.Event()
+    clients = []
+    sessions = []
+
+    async def block():
+        entered.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            cancelled.set()
+
+    class BlockingScanner(Scanner):
+        async def discover(self, **kwargs):
+            if stage == 'scan':
+                await block()
+            return advertised(Device('Cardputer-Adv', 'one'), [SERVICE_UUID])
+
+    class BlockingClient(Client):
+        def __init__(self, *args, **kwargs):
+            super().__init__(*args, **kwargs)
+            self.disconnect_calls = 0
+            clients.append(self)
+
+        async def connect(self):
+            if stage == 'connect':
+                await block()
+            await super().connect()
+
+        async def get_services(self):
+            if stage == 'services':
+                await block()
+            return self.services
+
+        async def start_notify(self, uuid, callback):
+            if stage == 'notify':
+                await block()
+            await super().start_notify(uuid, callback)
+
+        async def disconnect(self):
+            self.disconnect_calls += 1
+            await super().disconnect()
+
+    async def delay(_):
+        if stage == 'delay':
+            await block()
+
+    async def session(_):
+        sessions.append(True)
+
+    transport = BleTransport(scanner=BlockingScanner([]), client_factory=BlockingClient, sleep=delay)
+    stop = asyncio.Event()
+    task = asyncio.create_task(transport.run(session, stop))
+    await asyncio.wait_for(entered.wait(), 1)
+    stop.set()
+    await asyncio.wait_for(task, 1)
+    assert cancelled.is_set()
+    assert not sessions
+    assert all(client.disconnect_calls == 1 and not client.is_connected for client in clients)
+
+
+@pytest.mark.asyncio
+async def test_stop_at_connection_completion_does_not_start_session():
+    stop = asyncio.Event()
+    sessions = []
+
+    class Transport(BleTransport):
+        async def connect(self):
+            stop.set()
+
+    async def session(_):
+        sessions.append(True)
+
+    await Transport().run(session, stop)
+    assert not sessions
+
+
+@pytest.mark.asyncio
+async def test_disconnect_timeout_allows_shutdown():
+    errors = []
+    cancelled = asyncio.Event()
+
+    class HangingClient:
+        is_connected = True
+
+        async def disconnect(self):
+            try:
+                await asyncio.Event().wait()
+            finally:
+                cancelled.set()
+
+    transport = BleTransport(BleTransportConfig(disconnect_timeout_seconds=0.01), on_error=errors.append)
+    transport._client = HangingClient()
+    await asyncio.wait_for(transport.disconnect(), 1)
+    assert cancelled.is_set()
+    assert errors == ['BLE disconnect timed out']
+    assert transport._client is None
+
+
+@pytest.mark.asyncio
+async def test_outer_cancellation_drains_session():
+    ready = asyncio.Event()
+    ended = asyncio.Event()
+
+    class Transport(BleTransport):
+        async def connect(self):
+            pass
+
+    async def session(_):
+        ready.set()
+        try:
+            await asyncio.Event().wait()
+        finally:
+            ended.set()
+
+    task = asyncio.create_task(Transport().run(session, asyncio.Event()))
+    await ready.wait()
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert ended.is_set()
+
+
+@pytest.mark.asyncio
+async def test_stop_during_disconnect_preserves_bounded_cleanup():
+    entered = asyncio.Event()
+    release = asyncio.Event()
+    closed = asyncio.Event()
+
+    class SlowClient:
+        is_connected = True
+
+        async def disconnect(self):
+            entered.set()
+            await release.wait()
+            closed.set()
+
+    class Transport(BleTransport):
+        async def connect(self):
+            self._client = SlowClient()
+
+    async def session(_):
+        raise ConnectionError('link lost')
+
+    stop = asyncio.Event()
+    task = asyncio.create_task(Transport().run(session, stop))
+    await asyncio.wait_for(entered.wait(), 1)
+    stop.set()
+    await asyncio.sleep(0)
+    release.set()
+    await asyncio.wait_for(task, 1)
+    assert closed.is_set()

@@ -33,6 +33,7 @@ class BleTransportConfig:
     discovery_timeout_seconds: float = 5
     discovery_retries: int = 3
     discovery_retry_delay_seconds: float = 0.5
+    disconnect_timeout_seconds: float = 2
     write_chunk_bytes: int = SAFE_BLE_CHUNK_BYTES
     reconnect_initial_seconds: float = 1
     reconnect_max_seconds: float = 30
@@ -147,14 +148,20 @@ class BleTransport:
                 self._client = client
                 self._intentional_disconnect = False
                 return
+            except asyncio.CancelledError:
+                # The local client is not published until notifications are ready.
+                # Also disconnect a pending connection, even if is_connected is false.
+                self._intentional_disconnect = True
+                try:
+                    await self._disconnect_client(client)
+                finally:
+                    self._intentional_disconnect = False
+                raise
             except Exception as error:
                 last_error = error
                 if getattr(client, "is_connected", False):
                     self._intentional_disconnect = True
-                    try:
-                        await client.disconnect()
-                    except Exception as disconnect_error:
-                        self._report_error(f"BLE cleanup failed: {disconnect_error}")
+                    await self._disconnect_client(client)
                     self._intentional_disconnect = False
                 if attempt + 1 < self.config.discovery_retries:
                     await self._sleep(self.config.discovery_retry_delay_seconds)
@@ -217,12 +224,49 @@ class BleTransport:
         self._client = None
         self._intentional_disconnect = True
         if client is not None and getattr(client, "is_connected", False):
-            try:
-                await client.disconnect()
-            except Exception as error:
-                self._report_error(f"BLE disconnect failed: {error}")
+            await self._disconnect_client(client)
+
+    async def _disconnect_client(self, client: Any) -> None:
+        # Keep bounded cleanup alive if stop arrives during a reconnect cleanup.
+        cleanup = asyncio.create_task(self._disconnect_client_with_timeout(client))
+        try:
+            await asyncio.shield(cleanup)
+        except asyncio.CancelledError:
+            await cleanup
+            raise
+
+    async def _disconnect_client_with_timeout(self, client: Any) -> None:
+        try:
+            await asyncio.wait_for(
+                client.disconnect(), timeout=self.config.disconnect_timeout_seconds,
+            )
+        except TimeoutError:
+            self._report_error("BLE disconnect timed out")
+        except Exception as error:
+            self._report_error(f"BLE disconnect failed: {error}")
 
     async def run(
+        self,
+        session: Callable[["BleTransport"], Awaitable[None]],
+        stop_event: asyncio.Event,
+    ) -> None:
+        if stop_event.is_set():
+            return
+        worker = asyncio.create_task(self._run_connections(session, stop_event))
+        stopper = asyncio.create_task(stop_event.wait())
+        try:
+            done, _ = await asyncio.wait(
+                {worker, stopper}, return_when=asyncio.FIRST_COMPLETED,
+            )
+            if worker in done:
+                await worker
+        finally:
+            for task in (worker, stopper):
+                if not task.done():
+                    task.cancel()
+            await asyncio.gather(worker, stopper, return_exceptions=True)
+
+    async def _run_connections(
         self,
         session: Callable[["BleTransport"], Awaitable[None]],
         stop_event: asyncio.Event,
@@ -231,18 +275,10 @@ class BleTransport:
         while not stop_event.is_set():
             try:
                 await self.connect()
+                if stop_event.is_set():
+                    return
                 attempt = 0
-                session_task = asyncio.create_task(session(self))
-                stop_task = asyncio.create_task(stop_event.wait())
-                done, pending = await asyncio.wait(
-                    {session_task, stop_task},
-                    return_when=asyncio.FIRST_COMPLETED,
-                )
-                for task in pending:
-                    task.cancel()
-                await asyncio.gather(*pending, return_exceptions=True)
-                if session_task in done:
-                    await session_task
+                await session(self)
             except (BleTransportError, ConnectionError) as error:
                 attempt += 1
                 if self._on_error is not None:

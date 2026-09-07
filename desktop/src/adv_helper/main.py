@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import os
 import signal
 import sys
 from pathlib import Path
@@ -52,16 +53,34 @@ async def run(args: argparse.Namespace) -> int:
     application = build_application(config, diagnostics)
     stop_event = asyncio.Event()
     loop = asyncio.get_running_loop()
-    for name in (signal.SIGINT, signal.SIGTERM):
-        try:
-            loop.add_signal_handler(name, stop_event.set)
-        except NotImplementedError:
-            pass
+    previous_handlers = {}
+
+    def request_stop(signum: int) -> None:
+        if stop_event.is_set():
+            # Bypass asyncio.run's task draining if a backend ignores cancellation.
+            os._exit(128 + signum)
+        stop_event.set()
+        diagnostics.info("Stopping desktop service; press Ctrl+C again to force exit")
+
     try:
-        await transport.run(application.run_session, stop_event)
+        for name in (signal.SIGINT, signal.SIGTERM):
+            previous = signal.getsignal(name)
+            try:
+                loop.add_signal_handler(name, request_stop, name)
+                previous_handlers[name] = previous
+            except NotImplementedError:
+                pass
+        try:
+            await transport.run(application.run_session, stop_event)
+        finally:
+            try:
+                await transport.disconnect()
+            finally:
+                await application.close()
     finally:
-        await transport.disconnect()
-        await application.close()
+        for name, previous in previous_handlers.items():
+            loop.remove_signal_handler(name)
+            signal.signal(name, previous)
     return 0
 
 
