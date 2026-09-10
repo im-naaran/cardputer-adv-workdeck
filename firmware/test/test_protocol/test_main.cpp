@@ -20,7 +20,7 @@ std::string fixture(const char* name) {
 
 void test_shared_fixtures_decode() {
   adv::MessageCodec codec;
-  auto hello = codec.decode(fixture("hello_response.json"));
+  auto hello = codec.decode(fixture("v2/hello.json"));
   TEST_ASSERT_TRUE(hello.ok);
   TEST_ASSERT_EQUAL(adv::protocol::kVersion, hello.message.protocolVersion);
   auto usage = codec.decode(fixture("codex_usage_success_multi_window.json"));
@@ -30,7 +30,7 @@ void test_shared_fixtures_decode() {
 }
 
 void test_hello_without_settings() {
-  auto hello = adv::MessageCodec().decode(fixture("hello_without_settings.json"));
+  auto hello = adv::MessageCodec().decode(fixture("v2/hello.json"));
   TEST_ASSERT_TRUE(hello.ok);
   adv::ConnectionSession session;
   session.onBleConnected();
@@ -73,37 +73,37 @@ std::string compact(JsonDocument& doc) {
 }
 void test_script_contract() {
   adv::MessageCodec codec;
-  auto first = codec.decode(fixture("actions_page_first.json"));
+  auto first = codec.decode(fixture("v2/script_page_first.json"));
   TEST_ASSERT_TRUE(first.ok);
-  TEST_ASSERT_EQUAL(8, first.message.scripts.size());
+  TEST_ASSERT_EQUAL(8, first.message.actions.size());
   TEST_ASSERT_EQUAL(9, first.message.total);
   TEST_ASSERT_TRUE(first.message.hasNextOffset);
-  TEST_ASSERT_EQUAL_STRING("g", first.message.scripts[0].effectiveKey.c_str());
-  TEST_ASSERT_TRUE(first.message.scripts[1].effectiveKey.empty());
-  auto last = codec.decode(fixture("actions_page_last.json"));
+  TEST_ASSERT_EQUAL_STRING("n", first.message.actions[0].effectiveKey.c_str());
+  TEST_ASSERT_TRUE(first.message.actions[1].effectiveKey.empty());
+  auto last = codec.decode(fixture("v2/script_page_last.json"));
   TEST_ASSERT_TRUE(last.ok);
   TEST_ASSERT_FALSE(last.message.hasNextOffset);
-  TEST_ASSERT_TRUE(codec.decode(fixture("actions_page_empty.json")).ok);
-  TEST_ASSERT_FALSE(codec.decode(fixture("actions_page_invalid.json")).ok);
-  for (auto name : {"script_execute_success.json", "script_execute_error.json", "script_shortcut_success.json"}) {
+  TEST_ASSERT_TRUE(codec.decode(fixture("v2/script_page_empty.json")).ok);
+  TEST_ASSERT_FALSE(codec.decode(fixture("v2/invalid_page.json")).ok);
+  for (auto name : {"v2/script_execute_success.json", "v2/script_execute_error.json", "v2/script_shortcut_success.json"}) {
     auto result = codec.decode(fixture(name));
     TEST_ASSERT_TRUE(result.ok);
-    TEST_ASSERT_EQUAL_STRING("script.google.open", result.message.executedActionId.c_str());
+    TEST_ASSERT_EQUAL_STRING("script.test.0", result.message.executedActionId.c_str());
   }
   JsonDocument doc;
-  deserializeJson(doc, fixture("actions_page_first.json"));
+  deserializeJson(doc, fixture("v2/script_page_first.json"));
   doc["result"]["data"]["total"] = true;
   TEST_ASSERT_FALSE(codec.decode(compact(doc)).ok);
-  deserializeJson(doc, fixture("actions_page_first.json"));
+  deserializeJson(doc, fixture("v2/script_page_first.json"));
   doc["result"]["data"]["actions"][0]["key"] = "G";
   TEST_ASSERT_FALSE(codec.decode(compact(doc)).ok);
-  deserializeJson(doc, fixture("actions_page_first.json"));
-  doc["result"]["data"]["actions"][1]["actionId"] = "script.test.0";
+  deserializeJson(doc, fixture("v2/script_page_first.json"));
+  doc["result"]["data"]["actions"][1]["actionId"] = doc["result"]["data"]["actions"][0]["actionId"];
   TEST_ASSERT_FALSE(codec.decode(compact(doc)).ok);
-  deserializeJson(doc, fixture("actions_page_empty.json"));
+  deserializeJson(doc, fixture("v2/script_page_empty.json"));
   doc["result"]["data"].remove("nextOffset");
   TEST_ASSERT_FALSE(codec.decode(compact(doc)).ok);
-  deserializeJson(doc, fixture("script_execute_success.json"));
+  deserializeJson(doc, fixture("v2/script_execute_success.json"));
   doc["result"]["data"]["exitCode"] = true;
   TEST_ASSERT_FALSE(codec.decode(compact(doc)).ok);
   doc["result"]["data"]["exitCode"] = 1;
@@ -116,7 +116,7 @@ void test_script_metadata_does_not_truncate_embedded_nul() {
   adv::MessageCodec codec;
   for (const char* field : {"actionId", "name", "key"}) {
     JsonDocument doc;
-    deserializeJson(doc, fixture("actions_page_first.json"));
+    deserializeJson(doc, fixture("v2/script_page_first.json"));
     const std::string prefix = field == std::string("actionId") ? "script.test.0" :
                                field == std::string("name") ? "Valid" : "g";
     const std::string value = prefix + std::string(1, '\0') + "suffix";
@@ -127,15 +127,15 @@ void test_script_metadata_does_not_truncate_embedded_nul() {
 void test_script_requests_and_maximum_page() {
   adv::MessageCodec codec;
   JsonDocument doc;
-  deserializeJson(doc, codec.encodeActionsListRequest("page", 8));
+  deserializeJson(doc, codec.encodeActionsListRequest("page", adv::ActionType::kScript, 8));
   TEST_ASSERT_EQUAL_STRING("actions.list", doc["actionId"].as<const char*>());
   TEST_ASSERT_EQUAL(8, doc["payload"]["offset"].as<int>());
-  deserializeJson(doc, codec.encodeScriptExecuteRequest("exec", "script.google.open"));
-  TEST_ASSERT_EQUAL_STRING("scripts.execute", doc["actionId"].as<const char*>());
+  deserializeJson(doc, codec.encodeActionExecuteRequest("exec", "script.google.open"));
+  TEST_ASSERT_EQUAL_STRING("actions.execute", doc["actionId"].as<const char*>());
   TEST_ASSERT_EQUAL_STRING("script.google.open", doc["payload"]["actionId"].as<const char*>());
   deserializeJson(doc, codec.encodeShortcutExecuteRequest("exec", 'g'));
   TEST_ASSERT_EQUAL_STRING("g", doc["payload"]["key"].as<const char*>());
-  deserializeJson(doc, fixture("actions_page_first.json"));
+  deserializeJson(doc, fixture("v2/script_page_first.json"));
   doc["execId"] = std::string(128, '"');
   int i = 0;
   for (JsonObject item : doc["result"]["data"]["actions"].as<JsonArray>()) {
@@ -170,7 +170,7 @@ void test_router_handles_known_only() {
 
 void test_session_requires_compatible_hello_and_clears() {
   adv::MessageCodec codec;
-  auto hello = codec.decode(fixture("hello_response.json"));
+  auto hello = codec.decode(fixture("v2/hello.json"));
   adv::ConnectionSession session;
   TEST_ASSERT_FALSE(session.acceptHello(hello.message));
   session.onBleConnected();
@@ -183,17 +183,72 @@ void test_session_requires_compatible_hello_and_clears() {
 
 void test_incompatible_version_rejected() {
   adv::MessageCodec codec;
-  auto hello = codec.decode(fixture("hello_response.json"));
-  hello.message.protocolVersion = 2;
+  auto hello = codec.decode(fixture("v2/hello.json"));
+  hello.message.protocolVersion = 1;
   adv::ConnectionSession session;
   session.onBleConnected();
   TEST_ASSERT_FALSE(session.acceptHello(hello.message));
+}
+
+void test_v2_shared_contract_and_tristates() {
+  adv::MessageCodec codec;
+  for (const auto* name : {"hello", "script_page_first", "script_page_last", "script_page_empty",
+      "clipboard_page_first", "clipboard_page_last", "clipboard_page_empty", "script_execute_success",
+      "script_execute_error", "script_shortcut_success", "clipboard_execute_success", "clipboard_shortcut_success",
+      "clipboard_partial_failure", "clipboard_write_failed", "clipboard_unconfirmed", "busy", "not_found",
+      "script_list_request", "clipboard_list_request", "script_execute_request", "clipboard_execute_request", "shortcut_request"}) {
+    const auto result = codec.decode(fixture((std::string("v2/") + name + ".json").c_str()));
+    TEST_ASSERT_TRUE_MESSAGE(result.ok, name);
+  }
+  for (const auto* name : {"hello_v1_rejected", "invalid_page", "invalid_clipboard_success", "invalid_list_request"})
+    TEST_ASSERT_FALSE(codec.decode(fixture((std::string("v2/") + name + ".json").c_str())).ok);
+  auto partial = codec.decode(fixture("v2/clipboard_partial_failure.json")).message;
+  TEST_ASSERT_TRUE(partial.clipboardWritten == adv::NullableBool::kTrue);
+  TEST_ASSERT_TRUE(partial.pasteSent == adv::NullableBool::kFalse);
+  auto unknown = codec.decode(fixture("v2/clipboard_unconfirmed.json")).message;
+  TEST_ASSERT_TRUE(unknown.pasteSent == adv::NullableBool::kUnknown);
+  for (const auto* field : {"type", "actionId", "name", "exitCode", "clipboardWritten", "pasteSent", "reason"}) {
+    JsonDocument doc; deserializeJson(doc, fixture("v2/clipboard_execute_success.json"));
+    doc["result"]["data"].remove(field);
+    TEST_ASSERT_FALSE_MESSAGE(codec.decode(compact(doc)).ok, field);
+  }
+  for (int kind = 0; kind < 12; ++kind) {
+    JsonDocument doc; deserializeJson(doc, fixture("v2/clipboard_execute_success.json"));
+    auto d = doc["result"]["data"];
+    if (kind == 0) d["clipboardWritten"] = 1;
+    if (kind == 1) d["pasteSent"] = "true";
+    if (kind == 2) d["clipboardWritten"] = false;
+    if (kind == 3) d["pasteSent"] = nullptr;
+    if (kind == 4) d["type"] = "script";
+    if (kind == 5) d["type"] = "future";
+    if (kind == 6) d["reason"] = "WRITE_FAILED";
+    if (kind == 7) d["actionId"] = "script.test";
+    if (kind == 8) d["name"] = std::string("bad") + char(0) + "suffix";
+    if (kind == 9) d["name"] = std::string(65, 'x');
+    if (kind == 10) d["name"] = std::string("\xED\xA0\x80");
+    if (kind == 11) d["content"] = "forbidden";
+    TEST_ASSERT_FALSE(codec.decode(compact(doc)).ok);
+  }
+  for (int kind = 0; kind < 5; ++kind) {
+    JsonDocument doc; deserializeJson(doc, fixture("v2/hello.json"));
+    auto d = doc["result"]["data"];
+    if (kind == 0) d.remove("supportedActionTypes");
+    if (kind == 1) d["supportedActionTypes"] = nullptr;
+    if (kind == 2) d["supportedActionTypes"][0] = "future";
+    if (kind == 3) d["supportedActionTypes"][1] = d["supportedActionTypes"][0];
+    if (kind == 4) d["supportedActionTypes"][0] = std::string("script") + char(0);
+    TEST_ASSERT_FALSE(codec.decode(compact(doc)).ok);
+  }
+  JsonDocument doc; deserializeJson(doc, codec.encodeActionsListRequest("c", adv::ActionType::kClipboard, 16));
+  TEST_ASSERT_EQUAL_STRING("clipboard", doc["payload"]["type"].as<const char*>());
+  TEST_ASSERT_EQUAL(16, doc["payload"]["offset"].as<int>());
 }
 
 }  // namespace
 
 int main(int, char**) {
   UNITY_BEGIN();
+  RUN_TEST(test_v2_shared_contract_and_tristates);
   RUN_TEST(test_shared_fixtures_decode);
   RUN_TEST(test_hello_without_settings);
   RUN_TEST(test_time_contract);

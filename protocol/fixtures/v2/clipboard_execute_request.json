@@ -1,0 +1,8 @@
+{
+  "event": "request",
+  "actionId": "actions.execute",
+  "execId": "0123456789abcdef",
+  "payload": {
+    "actionId": "clipboard.test.0"
+  }
+}

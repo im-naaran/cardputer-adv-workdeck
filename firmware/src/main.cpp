@@ -7,8 +7,7 @@
 #include "application/codex/codex_controller.h"
 #include "application/codex/codex_page.h"
 #include "application/codex/codex_config_commands.h"
-#include "application/placeholder_page.h"
-#include "application/scripts/scripts_page.h"
+#include "application/actions/action_list_page.h"
 #include "application/input/input_config_commands.h"
 #include "application/time_sync/time_sync_controller.h"
 #include "core/connection_session.h"
@@ -31,9 +30,9 @@ adv::ConnectionSession session;
 adv::NavigationService navigation;
 adv::InputRouter inputRouter;
 adv::AppShell shell;
-adv::PlaceholderPage placeholder;
 adv::CodexPage codexPage;
-adv::ScriptsPage scriptsPage;
+adv::ActionListPage scriptsPage(adv::ActionType::kScript);
+adv::ActionListPage clipboardPage(adv::ActionType::kClipboard);
 adv::MessageCodec codec;
 adv::MessageRouter router;
 adv::ScheduledTaskService scheduler;
@@ -51,7 +50,7 @@ void cancelPending(const std::string& id) {
 
 adv::TimeSyncController timeSync(scheduler, execIds, systemTime, enqueueRequest, cancelPending);
 adv::CodexController codex(scheduler, execIds, enqueueRequest, cancelPending);
-adv::ScriptsController scripts(execIds, enqueueRequest, cancelPending);
+adv::ActionsController actions(execIds, enqueueRequest, cancelPending);
 adv::PlatformConfigFileStore configStore;
 adv::InputConfigService inputConfig(configStore, inputRouter);
 adv::CodexConfigService codexConfig(configStore, codex, [] { return clockSource.nowMs(); });
@@ -86,8 +85,16 @@ bool redrawRequested = true;
 void clearModuleSession() {
   codex.disconnect();
   timeSync.disconnect();
-  scripts.disconnect();
+  actions.disconnect();
   scriptsPage.reset();
+  clipboardPage.reset();
+}
+
+// Only the visible action directory loads; shortcuts never depend on its cache.
+void enterActionPage(uint32_t now) {
+  if (!session.ready()) return;
+  if (navigation.current() == adv::Module::kScripts) actions.enter(adv::ActionType::kScript, now);
+  if (navigation.current() == adv::Module::kClipboard) actions.enter(adv::ActionType::kClipboard, now);
 }
 
 void handleConnection() {
@@ -120,12 +127,13 @@ void handleKey(const adv::KeyEvent& event, uint32_t now) {
     if (navigation.current() != previous) {
       if (previous == adv::Module::kSettings) settingsPage.leave();
       codex.onPageChanged(navigation.current() == adv::Module::kCodex);
+      enterActionPage(now);
       redrawRequested = true;
     }
-    return;  // Switching pages preserves script requests, selection and feedback.
+    return;  // Switching pages preserves both directories and the shared execution.
   }
   if (routed.action == adv::InputAction::kShortcut) {
-    scripts.executeByKey(routed.event.character, now);
+    actions.executeByKey(routed.event.character, now);
     redrawRequested = true;
     return;
   }
@@ -144,11 +152,12 @@ void handleKey(const adv::KeyEvent& event, uint32_t now) {
       codex.onKey(routed.event, now);
     }
     redrawRequested = true;
-  } else if (navigation.current() == adv::Module::kScripts) {
-    if (routed.action == adv::InputAction::kConfirm) scripts.confirm(now);
+  } else if (navigation.current() == adv::Module::kScripts || navigation.current() == adv::Module::kClipboard) {
+    const auto type = navigation.current() == adv::Module::kScripts ? adv::ActionType::kScript : adv::ActionType::kClipboard;
+    if (routed.action == adv::InputAction::kConfirm) actions.confirm(type, now);
     if (routed.action == adv::InputAction::kDirection) {
-      if (routed.event.key == adv::Key::kUp) scripts.moveSelection(-1, now);
-      if (routed.event.key == adv::Key::kDown) scripts.moveSelection(1, now);
+      if (routed.event.key == adv::Key::kUp) actions.moveSelection(type, -1, now);
+      if (routed.event.key == adv::Key::kDown) actions.moveSelection(type, 1, now);
     }
     redrawRequested = true;
   }
@@ -162,16 +171,15 @@ void handleKeyboard(uint32_t now) {
 void draw(uint32_t now) {
   if (!redrawRequested) return;
   redrawRequested = false;
-  shell.beginFrame(display, navigation.current(), display.batteryLevel(),
-                   session.ready());
+  shell.beginFrame(display, navigation.current(), display.batteryLevel());
   if (navigation.current() == adv::Module::kSettings) settingsPage.render();
   else if (!session.ready()) shell.renderDisconnected(display);
   else if (navigation.current() == adv::Module::kCodex) {
     codexPage.render(display, codex.state(), now, codex.taskState());
   }
-  else if (navigation.current() == adv::Module::kScripts) scriptsPage.render(display, scripts.state());
-  else placeholder.render(display, navigation.current());
-  shell.renderFeedback(display, scripts.state().feedback);
+  else if (navigation.current() == adv::Module::kScripts) scriptsPage.render(display, actions.state(adv::ActionType::kScript));
+  else if (navigation.current() == adv::Module::kClipboard) clipboardPage.render(display, actions.state(adv::ActionType::kClipboard));
+  shell.renderFeedback(display, actions.execution().feedback);
   shell.endFrame(display);
 }
 }
@@ -210,10 +218,11 @@ void setup() {
       timeSync.onSessionReady(session.computerId(),
                               session.supports(adv::protocol::kTimeReadAction), now);
       codex.onSessionReady(session.supports(adv::protocol::kCodexUsageAction), now);
-      // Preserve initial ordering: time, Codex, then directory. Alt needs no directory.
-      scripts.onSessionReady(session.computerId(), session.supports(adv::protocol::kActionsListAction),
-                             session.supports(adv::protocol::kScriptsExecuteAction),
-                             session.supports(adv::protocol::kShortcutExecuteAction), now);
+      // Background queries precede the visible directory; hello may arrive after navigation.
+      actions.onSessionReady(session.computerId(), session.supports(adv::protocol::kActionsListAction),
+                             session.supports(adv::protocol::kActionsExecuteAction),
+                             session.supports(adv::protocol::kShortcutExecuteAction), session.supportedActionTypes());
+      enterActionPage(now);
     } else {
       // A rejected renegotiation must not let a later hello revive the old computer's cache.
       clearModuleSession();
@@ -225,10 +234,10 @@ void setup() {
   router.registerHandler(adv::protocol::kCodexUsageAction, [](const adv::Message& message) {
     codex.onMessage(message, clockSource.nowMs());
   });
-  for (const auto* action : {adv::protocol::kActionsListAction, adv::protocol::kScriptsExecuteAction,
+  for (const auto* action : {adv::protocol::kActionsListAction, adv::protocol::kActionsExecuteAction,
                              adv::protocol::kShortcutExecuteAction}) {
     router.registerHandler(action, [](const adv::Message& message) {
-      scripts.onMessage(message, clockSource.nowMs());
+      actions.onMessage(message, clockSource.nowMs());
     });
   }
 }
@@ -254,13 +263,15 @@ void loop() {
   if (settingsPage.tick(clockSource.nowMs())) redrawRequested = true;
   now = clockSource.nowMs();
   const bool wasInFlight = codex.state().inFlight();
-  const auto previousDirectory = scripts.state().directory;
-  const auto previousExecution = scripts.state().execution;
-  const bool hadFeedback = !scripts.state().feedback.empty();
-  scripts.tick(now);
+  const auto previousDirectory = actions.state(adv::ActionType::kScript).directory;
+  const auto previousClipboard = actions.state(adv::ActionType::kClipboard).directory;
+  const auto previousExecution = actions.execution().status;
+  const bool hadFeedback = !actions.execution().feedback.empty();
+  actions.tick(now);
   // Expiration must redraw once to restore the page footer even on an idle page.
-  if (previousDirectory != scripts.state().directory || previousExecution != scripts.state().execution ||
-      hadFeedback != !scripts.state().feedback.empty()) redrawRequested = true;
+  if (previousClipboard != actions.state(adv::ActionType::kClipboard).directory ||
+      previousDirectory != actions.state(adv::ActionType::kScript).directory || previousExecution != actions.execution().status ||
+      hadFeedback != !actions.execution().feedback.empty()) redrawRequested = true;
   timeSync.tick(now);
   codex.tick(now);
   scheduler.tick(now);

@@ -1,0 +1,8 @@
+{
+  "event": "request",
+  "actionId": "actions.shortcut.execute",
+  "execId": "0123456789abcdef",
+  "payload": {
+    "key": "n"
+  }
+}

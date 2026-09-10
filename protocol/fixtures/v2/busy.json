@@ -1,0 +1,10 @@
+{
+  "event": "response",
+  "actionId": "actions.execute",
+  "execId": "0123456789abcdef",
+  "result": {
+    "code": "BUSY",
+    "msg": "忙碌",
+    "data": null
+  }
+}

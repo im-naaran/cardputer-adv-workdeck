@@ -1,0 +1,73 @@
+{
+  "event": "response",
+  "actionId": "actions.list",
+  "execId": "0123456789abcdef",
+  "result": {
+    "code": "OK",
+    "msg": "完成",
+    "data": {
+      "type": "script",
+      "offset": 0,
+      "total": 9,
+      "nextOffset": 8,
+      "actions": [
+        {
+          "type": "script",
+          "actionId": "script.test.0",
+          "name": "条目 0",
+          "key": "n",
+          "effectiveKey": "n"
+        },
+        {
+          "type": "script",
+          "actionId": "script.test.1",
+          "name": "条目 1",
+          "key": "n",
+          "effectiveKey": null
+        },
+        {
+          "type": "script",
+          "actionId": "script.test.2",
+          "name": "条目 2",
+          "key": "n",
+          "effectiveKey": null
+        },
+        {
+          "type": "script",
+          "actionId": "script.test.3",
+          "name": "条目 3",
+          "key": "n",
+          "effectiveKey": null
+        },
+        {
+          "type": "script",
+          "actionId": "script.test.4",
+          "name": "条目 4",
+          "key": "n",
+          "effectiveKey": null
+        },
+        {
+          "type": "script",
+          "actionId": "script.test.5",
+          "name": "条目 5",
+          "key": "n",
+          "effectiveKey": null
+        },
+        {
+          "type": "script",
+          "actionId": "script.test.6",
+          "name": "条目 6",
+          "key": "n",
+          "effectiveKey": null
+        },
+        {
+          "type": "script",
+          "actionId": "script.test.7",
+          "name": "条目 7",
+          "key": "n",
+          "effectiveKey": null
+        }
+      ]
+    }
+  }
+}

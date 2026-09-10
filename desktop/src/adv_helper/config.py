@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any
 
 from adv_helper.core.protocol_constants import ACTION_CODEX_USAGE_READ
-from adv_helper.core.script_contract import valid_key, valid_name, valid_script_id, utf8_fits
+from adv_helper.core.action_contract import valid_key, valid_name, valid_action_id, utf8_fits
 from adv_helper.os_adapters.codex_app_server import DEFAULT_RPC_TIMEOUT_SECONDS
 
 
@@ -118,7 +118,14 @@ def _parse_action(payload: Any, index: int) -> ActionConfig:
     action_type = _non_empty_string(action.get("type"), "type")
     action_id = _non_empty_string(action.get("actionId"), "actionId")
     name = _non_empty_string(action.get("name"), "name")
-    content = _non_empty_string(action.get("content"), "content")
+    content = action.get("content")
+    if action_type == "clipboard":
+        # Whitespace-only snippets are useful; validation must never trim the text.
+        if not isinstance(content, str) or not content:
+            raise ConfigError("clipboard content must be a non-empty string")
+        name = action["name"]
+    else:
+        content = _non_empty_string(content, "content")
     if action_type == "script":
         # Shell whitespace and newlines belong to the program, not UI metadata.
         content = action["content"]
@@ -129,22 +136,25 @@ def _parse_action(payload: Any, index: int) -> ActionConfig:
     if type(enabled) is not bool:
         raise ConfigError("enabled must be a boolean")
     params = _require_object(action.get("params", {}), "params")
-    if action_type == "script":
-        if not valid_script_id(action_id):
-            raise ConfigError("script actionId must use script. prefix and at most 64 ASCII identifier characters")
+    if action_type in ("script", "clipboard"):
+        if not valid_action_id(action_id, action_type):
+            raise ConfigError(f"{action_type} actionId must use {action_type}. prefix and at most 64 ASCII identifier characters")
         if not valid_name(name):
-            raise ConfigError("script name must be single-line text within 64 UTF-8 bytes")
+            raise ConfigError(f"{action_type} name must be single-line text within 64 UTF-8 bytes")
         if key is not None and not key.isascii():
-            raise ConfigError("script key must be one ASCII letter or null")
+            raise ConfigError(f"{action_type} key must be one ASCII letter or null")
         key = key.lower() if key is not None else None
         if not valid_key(key):
-            raise ConfigError("script key must be one ASCII letter or null")
+            raise ConfigError(f"{action_type} key must be one ASCII letter or null")
         if "\0" in content or not utf8_fits(content, 8192):
-            raise ConfigError("script content contains NUL, invalid UTF-8 or exceeds 8192 bytes")
-        _reject_unknown(params, {"timeoutSeconds"}, "script.params")
-        params = {"timeoutSeconds": _bounded_int(params.get("timeoutSeconds", 15), "timeoutSeconds", 1, 30)}
+            raise ConfigError(f"{action_type} content contains NUL, invalid UTF-8 or exceeds 8192 bytes")
+        if action_type == "script":
+            _reject_unknown(params, {"timeoutSeconds"}, "script.params")
+            params = {"timeoutSeconds": _bounded_int(params.get("timeoutSeconds", 15), "timeoutSeconds", 1, 30)}
+        else:
+            _reject_unknown(params, set(), "clipboard.params")
     elif action_type != "codex" or action_id != ACTION_CODEX_USAGE_READ or content != "usage":
-        raise ConfigError("unsupported action; expected codex.usage.read or script")
+        raise ConfigError("unsupported action; expected codex.usage.read, script or clipboard")
     return ActionConfig(action_type, action_id, name, key, enabled, content, params)
 
 
@@ -155,9 +165,9 @@ def _require_object(value: Any, field: str) -> dict[str, Any]:
 
 
 def _reject_unknown(value: dict[str, Any], allowed: set[str], field: str) -> None:
-    unknown = sorted(set(value) - allowed)
-    if unknown:
-        raise ConfigError(f"{field} contains unknown fields: {', '.join(unknown)}")
+    if any(key not in allowed for key in value):
+        # Unknown keys can themselves contain pasted secrets; report only the location.
+        raise ConfigError(f"{field} contains unknown fields")
 
 
 def _bounded_int(value: Any, field: str, minimum: int, maximum: int) -> int:

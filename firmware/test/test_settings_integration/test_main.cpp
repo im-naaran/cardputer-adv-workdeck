@@ -3,8 +3,7 @@
 #include "application/codex/codex_controller.h"
 #include "application/codex/codex_page.h"
 #include "application/codex/codex_config_commands.h"
-#include "application/placeholder_page.h"
-#include "application/scripts/scripts_page.h"
+#include "application/actions/action_list_page.h"
 #include "application/input/input_config_commands.h"
 #include "application/time_sync/time_sync_controller.h"
 #include "core/connection_session.h"
@@ -56,7 +55,7 @@ void actual_main_offline_lifecycle() {
   const bool enabled=codex.taskState().enabled;handleKey({Key::kEnter,true},0);TEST_ASSERT_EQUAL(enabled,codex.taskState().enabled);
   KeyEvent shortcut{Key::kCharacter};shortcut.character='a';shortcut.alt=true;handleKey(shortcut,0);
   TEST_ASSERT_EQUAL_STRING("saved;",settingsPage.editor().c_str());
-  TEST_ASSERT_FALSE(scripts.state().feedback.empty());
+  TEST_ASSERT_FALSE(actions.execution().feedback.empty());
   handleKey({Key::kDigit1,true},0);TEST_ASSERT_TRUE(navigation.current()==Module::kCodex);
   handleKey({Key::kEnter},0); // Offline Codex input must stay gated.
   handleKey({Key::kDigit4,true},0);TEST_ASSERT_EQUAL_STRING("saved;",settingsPage.editor().c_str());
@@ -118,4 +117,57 @@ void actual_main_offline_lifecycle() {
   clockSource.now+=600;loop();TEST_ASSERT_EQUAL(180,settings.intervalSeconds());
 
 }
-int main(int,char**) { UNITY_BEGIN();RUN_TEST(actual_main_offline_lifecycle);return UNITY_END(); }
+void actual_main_action_pages_and_session() {
+  // Exercise production hello/navigation dispatch, including entering before hello.
+  ble.onDisconnected();handleConnection();
+  handleKey({Key::kDigit3,true},clockSource.now);
+  ble.onConnected();ble.poll(clockSource.now);handleConnection();
+  Message hello;hello.actionId=protocol::kHelloAction;hello.resultCode="OK";
+  hello.protocolVersion=protocol::kVersion;hello.computerId="actions-pc";hello.computerName="PC";
+  hello.capabilities={protocol::kActionsListAction,protocol::kActionsExecuteAction,protocol::kShortcutExecuteAction};
+  hello.supportedActionTypes={ActionType::kScript,ActionType::kClipboard};
+  router.route(hello);
+  TEST_ASSERT_TRUE(session.ready());
+  const auto clipboardId=actions.directoryExecId(ActionType::kClipboard);
+  TEST_ASSERT_FALSE(clipboardId.empty());
+  TEST_ASSERT_TRUE(actions.directoryExecId(ActionType::kScript).empty());
+  handleKey({Key::kDigit2,true},clockSource.now);
+  TEST_ASSERT_FALSE(actions.directoryExecId(ActionType::kScript).empty());
+  Message page;page.actionId=protocol::kActionsListAction;page.resultCode="OK";page.hasActionType=true;page.total=8;
+  for(auto type:{ActionType::kClipboard,ActionType::kScript}) {
+    page.actionType=type;page.execId=actions.directoryExecId(type);page.actions.clear();
+    for(int n=0;n<8;++n)page.actions.push_back({std::string(type==ActionType::kScript?"script.":"clipboard.")+std::to_string(n),"测试条目","","",type});
+    router.route(page);
+    TEST_ASSERT_EQUAL(8,actions.state(type).entries.size());
+  }
+  handleKey({Key::kDown},clockSource.now);
+  TEST_ASSERT_EQUAL(1,actions.state(ActionType::kScript).selected);
+  handleKey({Key::kDigit3,true},clockSource.now);
+  for(int n=0;n<6;++n)handleKey({Key::kDown},clockSource.now);
+  TEST_ASSERT_EQUAL(6,actions.state(ActionType::kClipboard).selected);
+  TEST_ASSERT_EQUAL(1,actions.state(ActionType::kScript).selected);
+  handleKey({Key::kEnter},clockSource.now);
+  const auto executionId=actions.executionExecId();TEST_ASSERT_FALSE(executionId.empty());
+  handleKey({Key::kDigit1,true},clockSource.now);
+  handleKey({Key::kCharacter,false,'g',true},clockSource.now);
+  TEST_ASSERT_EQUAL_STRING(executionId.c_str(),actions.executionExecId().c_str());
+  TEST_ASSERT_FALSE(actions.execution().feedback.empty());
+  clearModuleSession();
+  for(auto type:{ActionType::kScript,ActionType::kClipboard}) {
+    TEST_ASSERT_TRUE(actions.state(type).entries.empty());TEST_ASSERT_TRUE(actions.directoryExecId(type).empty());
+  }
+  TEST_ASSERT_TRUE(actions.executionExecId().empty());TEST_ASSERT_TRUE(actions.execution().feedback.empty());
+  // Reconnect on Codex does not eagerly fetch either directory or replay execution.
+  router.route(hello);
+  TEST_ASSERT_TRUE(actions.directoryExecId(ActionType::kScript).empty());
+  TEST_ASSERT_TRUE(actions.directoryExecId(ActionType::kClipboard).empty());
+  handleKey({Key::kDigit3,true},clockSource.now);
+  clockSource.now+=15000;loop();
+  TEST_ASSERT_TRUE(actions.state(ActionType::kClipboard).directory==ActionDirectoryStatus::kFailed);
+  handleKey({Key::kEnter},clockSource.now);
+  TEST_ASSERT_FALSE(actions.directoryExecId(ActionType::kClipboard).empty());
+  TEST_ASSERT_TRUE(actions.executionExecId().empty());
+  TEST_ASSERT_FALSE(actions.onMessage(page,clockSource.now));
+  ble.onDisconnected();handleConnection();
+}
+int main(int,char**) { UNITY_BEGIN();RUN_TEST(actual_main_offline_lifecycle);RUN_TEST(actual_main_action_pages_and_session);return UNITY_END(); }

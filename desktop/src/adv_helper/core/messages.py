@@ -4,9 +4,9 @@ import json
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from .script_contract import validate_page, validate_execution
+from . import action_contract
 from .protocol_constants import (
-    ACTION_ACTIONS_LIST, ACTION_SCRIPTS_EXECUTE, ACTION_SHORTCUT_EXECUTE,
+    ACTION_ACTIONS_LIST, ACTION_EXECUTE, ACTION_SHORTCUT_EXECUTE,
     ACTION_CODEX_USAGE_READ,
     ACTION_SYSTEM_HELLO,
     ACTION_SYSTEM_TIME_READ,
@@ -99,9 +99,13 @@ def parse_message(payload: Any) -> Message:
                 raise ProtocolError("invalid time data")
         try:
             if action_id == ACTION_ACTIONS_LIST and code == "OK":
-                validate_page(raw_result["data"])
-            elif action_id in (ACTION_SCRIPTS_EXECUTE, ACTION_SHORTCUT_EXECUTE):
-                validate_execution(code, raw_result["data"])
+                action_contract.validate_page(raw_result["data"])
+            elif action_id in (ACTION_EXECUTE, ACTION_SHORTCUT_EXECUTE):
+                action_contract.validate_execution(code, raw_result["data"])
+            elif action_id == ACTION_SYSTEM_HELLO and code == "OK":
+                data = raw_result["data"]
+                if isinstance(data, dict) and data.get("protocolVersion") == 2:
+                    action_contract.validate_supported_types(data.get("supportedActionTypes"))
         except ValueError as error:
             raise ProtocolError(str(error)) from error
         return ResponseMessage("response", action_id, exec_id, Result(code, msg, raw_result["data"]))

@@ -1,0 +1,18 @@
+{
+  "event": "response",
+  "actionId": "actions.execute",
+  "execId": "0123456789abcdef",
+  "result": {
+    "code": "OK",
+    "msg": "完成",
+    "data": {
+      "type": "script",
+      "actionId": "script.test.0",
+      "name": "条目 0",
+      "exitCode": 0,
+      "clipboardWritten": null,
+      "pasteSent": null,
+      "reason": null
+    }
+  }
+}

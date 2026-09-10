@@ -1,8 +1,0 @@
-{
-  "event": "request",
-  "actionId": "scripts.execute",
-  "execId": "scripts-1",
-  "payload": {
-    "actionId": "script.google.open"
-  }
-}

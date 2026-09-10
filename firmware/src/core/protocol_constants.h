@@ -5,7 +5,7 @@
 
 namespace adv::protocol {
 
-constexpr int kVersion = 1;
+constexpr int kVersion = 2;
 constexpr size_t kMaxJsonBytes = 4096;
 constexpr size_t kSafeChunkBytes = 20;
 constexpr uint32_t kNotifyChunkDelayMs = 10;
@@ -17,8 +17,8 @@ constexpr const char* kCodexUsageAction = "codex.usage.read";
 constexpr const char* kTimeReadAction = "system.time.read";
 
 constexpr const char* kActionsListAction = "actions.list";
-constexpr const char* kScriptsExecuteAction = "scripts.execute";
+constexpr const char* kActionsExecuteAction = "actions.execute";
 constexpr const char* kShortcutExecuteAction = "actions.shortcut.execute";
-constexpr size_t kScriptPageSize = 8;
+constexpr size_t kActionPageSize = 8;
 
 }  // namespace adv::protocol

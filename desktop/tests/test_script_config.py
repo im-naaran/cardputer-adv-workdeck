@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from adv_helper.application.script_module import ScriptModule
+from adv_helper.application.actions_module import ActionsModule
 from adv_helper.config import load_config, parse_config
 from adv_helper.core.messages import RequestMessage, decode_message, encode_message
 
@@ -45,10 +45,10 @@ def test_invalid_optional_script_isolated(change):
 async def test_catalog_has_no_total_count_limit(count):
     config = configured(*(script(i, key="G" if i % 2 else "g") for i in range(count)))
     assert not config.action_errors
-    module = ScriptModule(config)
+    module = ActionsModule(config)
     offset, items = 0, []
     while offset is not None:
-        response = await module.list_actions(RequestMessage("request", "actions.list", "x" * 128, {"offset": offset}))
+        response = await module.list_actions(RequestMessage("request", "actions.list", "x" * 128, {"type": "script", "offset": offset}))
         response = decode_message(encode_message(response)[:-1])
         data = response.result.data
         assert data["total"] == count
@@ -61,8 +61,8 @@ async def test_catalog_has_no_total_count_limit(count):
 
 async def test_disabled_invalid_and_duplicate_ids_do_not_own_key():
     config = configured(script(enabled=False), script(1, content=""), script(2), script(2), script(3, key=None))
-    module = ScriptModule(config)
-    page = await module.list_actions(RequestMessage("request", "actions.list", "1", {"offset": 0}))
+    module = ActionsModule(config)
+    page = await module.list_actions(RequestMessage("request", "actions.list", "1", {"type": "script", "offset": 0}))
     assert len(config.action_errors) == 2
     assert [i["actionId"] for i in page.result.data["actions"]] == ["script.test.2", "script.test.3"]
     assert page.result.data["actions"][0]["effectiveKey"] == "g"
@@ -71,7 +71,7 @@ async def test_disabled_invalid_and_duplicate_ids_do_not_own_key():
 @pytest.mark.parametrize("payload", [{}, {"offset": True}, {"offset": -8}, {"offset": 1},
                                      {"offset": 8}, {"offset": 0, "extra": 1}])
 async def test_invalid_page_request(payload):
-    result = await ScriptModule(configured(script())).list_actions(RequestMessage("request", "actions.list", "1", payload))
+    result = await ActionsModule(configured(script())).list_actions(RequestMessage("request", "actions.list", "1", payload))
     assert result.result.code == "ERROR"
 
 

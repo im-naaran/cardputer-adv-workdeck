@@ -1,0 +1,10 @@
+{
+  "event": "response",
+  "actionId": "actions.shortcut.execute",
+  "execId": "0123456789abcdef",
+  "result": {
+    "code": "ERROR",
+    "msg": "未绑定快捷键",
+    "data": null
+  }
+}

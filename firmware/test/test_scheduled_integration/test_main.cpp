@@ -176,7 +176,7 @@ void runtime_config_and_legacy_hello() {
   f.now=2000;
   TEST_ASSERT_TRUE(f.config.save(adv::encodeCodexConfig({60})).changed);
   // Old desktop values stay in the wire envelope, but never enter the local task state.
-  const auto legacy=adv::MessageCodec().decode(R"({"event":"response","actionId":"system.hello","execId":"hello","result":{"code":"OK","msg":"ready","data":{"protocolVersion":1,"computerId":"pc","computerName":"PC","capabilities":["codex.usage.read","system.time.read"],"settings":{"codexRefreshIntervalSeconds":1}}}})");
+  const auto legacy=adv::MessageCodec().decode(R"({"event":"response","actionId":"system.hello","execId":"hello","result":{"code":"OK","msg":"ready","data":{"protocolVersion":2,"supportedActionTypes":[],"computerId":"pc","computerName":"PC","capabilities":["codex.usage.read","system.time.read"],"settings":{"codexRefreshIntervalSeconds":1}}}})");
   TEST_ASSERT_TRUE(legacy.ok);
   f.now=3000;f.router.route(legacy.message);
   TEST_ASSERT_EQUAL(60000,f.codex.taskState().intervalMs);

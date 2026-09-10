@@ -1,0 +1,9 @@
+{
+  "event": "request",
+  "actionId": "actions.list",
+  "execId": "0123456789abcdef",
+  "payload": {
+    "type": "clipboard",
+    "offset": 0
+  }
+}

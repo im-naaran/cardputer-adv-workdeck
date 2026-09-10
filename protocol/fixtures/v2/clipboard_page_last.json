@@ -1,0 +1,24 @@
+{
+  "event": "response",
+  "actionId": "actions.list",
+  "execId": "0123456789abcdef",
+  "result": {
+    "code": "OK",
+    "msg": "完成",
+    "data": {
+      "type": "clipboard",
+      "offset": 8,
+      "total": 9,
+      "nextOffset": null,
+      "actions": [
+        {
+          "type": "clipboard",
+          "actionId": "clipboard.test.8",
+          "name": "条目 8",
+          "key": "n",
+          "effectiveKey": null
+        }
+      ]
+    }
+  }
+}

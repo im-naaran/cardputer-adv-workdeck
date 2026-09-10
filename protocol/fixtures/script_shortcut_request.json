@@ -1,8 +1,0 @@
-{
-  "event": "request",
-  "actionId": "actions.shortcut.execute",
-  "execId": "scripts-1",
-  "payload": {
-    "key": "g"
-  }
-}

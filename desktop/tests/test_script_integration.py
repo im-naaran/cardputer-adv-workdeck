@@ -2,7 +2,7 @@ import asyncio
 
 import pytest
 
-from adv_helper.application.script_module import ScriptModule
+from adv_helper.application.actions_module import ActionsModule
 from adv_helper.core.messages import RequestMessage, decode_message, encode_message
 from adv_helper.os_adapters.script_runner import ScriptRunResult
 from test_desktop_integration import FakeProvider, MemoryTransport, build_test_application
@@ -28,21 +28,21 @@ async def test_global_first_match_and_last_id_without_reading_pages():
     config = configured(script(0, enabled=False), *(script(i, content=f"script {i}") for i in range(1, 102)))
     app = build_test_application(config, FakeProvider(), script_runner=runner)
     hello = app._hello_message()
-    assert hello.result.data["capabilities"] == ["actions.list", "actions.shortcut.execute", "scripts.execute", "system.time.read"]
+    assert hello.result.data["capabilities"] == ["actions.execute", "actions.list", "actions.shortcut.execute", "system.time.read"]
     empty_app = build_test_application(configured(), FakeProvider(), script_runner=runner)
     assert len(encode_message(hello)) == len(encode_message(empty_app._hello_message()))
     response = await app.registry.dispatch(request("actions.shortcut.execute", {"key": "g"}))
     assert response.result.data["actionId"] == "script.test.1"
     assert response.action_id == "actions.shortcut.execute"
-    response = await app.registry.dispatch(request("scripts.execute", {"actionId": "script.test.101"}))
+    response = await app.registry.dispatch(request("actions.execute", {"actionId": "script.test.101"}))
     assert response.result.data["actionId"] == "script.test.101"
     assert [call[0] for call in runner.calls] == ["script 1", "script 101"]
 
 
 @pytest.mark.parametrize("action,payload", [
-    ("scripts.execute", {"actionId": "script.disabled"}),
-    ("scripts.execute", {"actionId": "script.missing"}),
-    ("scripts.execute", {"actionId": "script.test.0", "content": "unexpected"}),
+    ("actions.execute", {"actionId": "script.disabled"}),
+    ("actions.execute", {"actionId": "script.missing"}),
+    ("actions.execute", {"actionId": "script.test.0", "content": "unexpected"}),
     ("actions.shortcut.execute", {"key": "b"}),
     ("actions.shortcut.execute", {"key": None}),
     ("actions.shortcut.execute", {"key": "G"}),
@@ -50,7 +50,7 @@ async def test_global_first_match_and_last_id_without_reading_pages():
 ])
 async def test_unavailable_and_malformed_requests_never_execute(action, payload):
     runner = Runner()
-    module = ScriptModule(configured(script(), script(actionId="script.disabled", enabled=False)), runner)
+    module = ActionsModule(configured(script(), script(actionId="script.disabled", enabled=False)), runner)
     response = await module.handle(request(action, payload))
     assert response.result.code == "ERROR" and not runner.calls
 
@@ -58,8 +58,8 @@ async def test_unavailable_and_malformed_requests_never_execute(action, payload)
 @pytest.mark.parametrize("result", [ScriptRunResult("OK", 0), ScriptRunResult("ERROR", 5),
                                     ScriptRunResult("ERROR"), ScriptRunResult("TIMEOUT")])
 async def test_execution_outcomes_preserve_actual_identity(result):
-    module = ScriptModule(configured(script()), Runner(result))
-    response = await module.handle(request("scripts.execute", {"actionId": "script.test.0"}))
+    module = ActionsModule(configured(script()), Runner(result))
+    response = await module.handle(request("actions.execute", {"actionId": "script.test.0"}))
     assert decode_message(encode_message(response)[:-1]) == response
     assert response.result.code == result.code
     assert response.result.data["actionId"] == "script.test.0"
@@ -69,7 +69,7 @@ async def test_execution_outcomes_preserve_actual_identity(result):
 async def test_runner_failure_keeps_module_available():
     class BrokenRunner(Runner):
         async def run(self, *args): raise OSError("private content")
-    module = ScriptModule(configured(script()), BrokenRunner())
+    module = ActionsModule(configured(script()), BrokenRunner())
     for _ in range(2):
         response = await module.handle(request("actions.shortcut.execute", {"key": "g"}))
         assert response.result.code == "ERROR"
@@ -99,8 +99,8 @@ async def test_session_busy_concurrency_and_cancellation_cleanup():
         await transport.incoming.put(encode_message(request("actions.shortcut.execute", {"key": "g"}, "first")))
         await asyncio.wait_for(started.wait(), 2)
         for action, payload, id in [
-            ("scripts.execute", {"actionId": "script.test.0"}, "second"),
-            ("actions.list", {"offset": 0}, "page"), ("system.time.read", {}, "time"),
+            ("actions.execute", {"actionId": "script.test.0"}, "second"),
+            ("actions.list", {"type": "script", "offset": 0}, "page"), ("system.time.read", {}, "time"),
             ("codex.usage.read", {}, "codex"),
         ]:
             await transport.incoming.put(encode_message(request(action, payload, id)))
@@ -111,7 +111,7 @@ async def test_session_busy_concurrency_and_cancellation_cleanup():
         assert len(runner.calls) == 1 and provider.calls == 1
         session.cancel()
         await asyncio.wait_for(cleaning.wait(), 2)
-        busy = await app.registry.dispatch(request("scripts.execute", {"actionId": "script.test.0"}, "cleanup"))
+        busy = await app.registry.dispatch(request("actions.execute", {"actionId": "script.test.0"}, "cleanup"))
         assert busy.result.code == "BUSY"
         assert not session.done()
         release_cleanup.set()

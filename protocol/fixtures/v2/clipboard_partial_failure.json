@@ -1,0 +1,18 @@
+{
+  "event": "response",
+  "actionId": "actions.execute",
+  "execId": "0123456789abcdef",
+  "result": {
+    "code": "ERROR",
+    "msg": "粘贴失败，文本已复制",
+    "data": {
+      "type": "clipboard",
+      "actionId": "clipboard.test.0",
+      "name": "条目 0",
+      "exitCode": null,
+      "clipboardWritten": true,
+      "pasteSent": false,
+      "reason": "PASTE_FAILED"
+    }
+  }
+}

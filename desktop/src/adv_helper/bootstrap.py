@@ -8,7 +8,8 @@ from typing import Any, Protocol
 
 from adv_helper.application.codex_module import CodexModule
 from adv_helper.application.time_module import TimeModule
-from adv_helper.application.script_module import ScriptModule
+from adv_helper.application.actions_module import ActionsModule
+from adv_helper.os_adapters.paste_runner import PasteRunner
 from adv_helper.os_adapters.script_runner import ScriptRunner
 from adv_helper.config import AppConfig
 from adv_helper.core.framing import FrameError, JsonlBuffer
@@ -23,7 +24,7 @@ from adv_helper.core.messages import (
     encode_message,
 )
 from adv_helper.core.protocol_constants import (ACTION_SYSTEM_TIME_READ, PROTOCOL_VERSION,
-    ACTION_ACTIONS_LIST, ACTION_SCRIPTS_EXECUTE, ACTION_SHORTCUT_EXECUTE)
+    ACTION_ACTIONS_LIST, ACTION_EXECUTE, ACTION_SHORTCUT_EXECUTE)
 from adv_helper.core.registry import ActionRegistry
 from adv_helper.core.session import ConnectionSession
 from adv_helper.os_adapters.codex_app_server import CodexAppServerClient, RateLimitProvider
@@ -46,11 +47,12 @@ class ModuleManager:
     def enable(self, action_id: str, factory: Callable[[], Any]) -> None:
         self.enable_group((action_id,), factory)
 
-    def enable_group(self, action_ids: tuple[str, ...], factory: Callable[[], Any]) -> None:
+    def enable_group(self, action_ids: tuple[str, ...], factory: Callable[[], Any]) -> Any:
         try:
             module = factory()
             for action_id in action_ids:
                 self._registry.register(action_id, module.handle)
+            return module
         except Exception as error:
             # Module startup failure is isolated so BLE and local diagnostics stay available.
             self._diagnostics.error("module initialization failed", actionIds=action_ids, errorType=type(error).__name__)
@@ -67,7 +69,9 @@ class DesktopApplication:
         computer_identity: ComputerIdentity,
         receive_poll_seconds: float = 1,
         frame_timeout_seconds: float = 5,
+        actions: ActionsModule | None = None,
     ) -> None:
+        self.actions = actions
         self.config = config
         self.registry = registry
         self.diagnostics = diagnostics
@@ -178,6 +182,7 @@ class DesktopApplication:
                     "computerId": self.computer_identity.stable_id,
                     "computerName": self.computer_identity.display_name,
                     "capabilities": list(self.registry.capabilities),
+                    "supportedActionTypes": list(self.actions.supported_action_types) if self.actions else [],
                 },
             ),
         )
@@ -194,6 +199,7 @@ def build_application(
     *,
     provider: RateLimitProvider | None = None,
     script_runner: ScriptRunner | None = None,
+    paste_runner: PasteRunner | None = None,
     computer_identity: ComputerIdentity | None = None,
     receive_poll_seconds: float = 1,
     frame_timeout_seconds: float = 5,
@@ -202,8 +208,8 @@ def build_application(
     registry.register(ACTION_SYSTEM_TIME_READ, TimeModule().handle)
     actual_provider = provider or CodexAppServerClient(timeout_seconds=config.codex.request_timeout_seconds)
     modules = ModuleManager(registry, diagnostics)
-    modules.enable_group((ACTION_ACTIONS_LIST, ACTION_SCRIPTS_EXECUTE, ACTION_SHORTCUT_EXECUTE),
-                         lambda: ScriptModule(config, script_runner, diagnostics))
+    actions = modules.enable_group((ACTION_ACTIONS_LIST, ACTION_EXECUTE, ACTION_SHORTCUT_EXECUTE),
+                                   lambda: ActionsModule(config, script_runner, diagnostics, paste_runner=paste_runner))
     enabled_ids = {action.action_id for action in config.enabled_actions}
     if ACTION_CODEX_USAGE_READ in enabled_ids:
         modules.enable(ACTION_CODEX_USAGE_READ, lambda: CodexModule(actual_provider))
@@ -215,6 +221,7 @@ def build_application(
         config,
         registry,
         diagnostics,
+        actions=actions,
         provider=actual_provider,
         computer_identity=computer_identity or load_computer_identity(),
         receive_poll_seconds=receive_poll_seconds,

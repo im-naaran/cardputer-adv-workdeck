@@ -1,0 +1,176 @@
+{
+  "configVersion": 1,
+  "actions": [
+    {
+      "type": "script",
+      "actionId": "script.first",
+      "name": "首项脚本",
+      "key": "g",
+      "enabled": true,
+      "content": "true",
+      "params": {}
+    },
+    {
+      "type": "clipboard",
+      "actionId": "clipboard.item1",
+      "name": "常用文本 1",
+      "key": "g",
+      "enabled": true,
+      "content": "  中文🙂\n\ttext  ",
+      "params": {}
+    },
+    {
+      "type": "clipboard",
+      "actionId": "clipboard.item2",
+      "name": "常用文本 2",
+      "key": null,
+      "enabled": true,
+      "content": "{\\rtf1 literal}",
+      "params": {}
+    },
+    {
+      "type": "clipboard",
+      "actionId": "clipboard.item3",
+      "name": "常用文本 3",
+      "key": null,
+      "enabled": true,
+      "content": "%!PS-Adobe literal",
+      "params": {}
+    },
+    {
+      "type": "clipboard",
+      "actionId": "clipboard.item4",
+      "name": "常用文本 4",
+      "key": null,
+      "enabled": true,
+      "content": "文本 4",
+      "params": {}
+    },
+    {
+      "type": "clipboard",
+      "actionId": "clipboard.item5",
+      "name": "常用文本 5",
+      "key": null,
+      "enabled": true,
+      "content": "文本 5",
+      "params": {}
+    },
+    {
+      "type": "clipboard",
+      "actionId": "clipboard.item6",
+      "name": "常用文本 6",
+      "key": null,
+      "enabled": true,
+      "content": "文本 6",
+      "params": {}
+    },
+    {
+      "type": "clipboard",
+      "actionId": "clipboard.item7",
+      "name": "常用文本 7",
+      "key": null,
+      "enabled": true,
+      "content": "文本 7",
+      "params": {}
+    },
+    {
+      "type": "clipboard",
+      "actionId": "clipboard.item8",
+      "name": "常用文本 8",
+      "key": null,
+      "enabled": true,
+      "content": "文本 8",
+      "params": {}
+    },
+    {
+      "type": "clipboard",
+      "actionId": "clipboard.item9",
+      "name": "常用文本 9",
+      "key": null,
+      "enabled": true,
+      "content": "文本 9",
+      "params": {}
+    },
+    {
+      "type": "clipboard",
+      "actionId": "clipboard.item10",
+      "name": "常用文本 10",
+      "key": null,
+      "enabled": true,
+      "content": "文本 10",
+      "params": {}
+    },
+    {
+      "type": "clipboard",
+      "actionId": "clipboard.item11",
+      "name": "常用文本 11",
+      "key": null,
+      "enabled": true,
+      "content": "文本 11",
+      "params": {}
+    },
+    {
+      "type": "clipboard",
+      "actionId": "clipboard.item12",
+      "name": "常用文本 12",
+      "key": null,
+      "enabled": true,
+      "content": "文本 12",
+      "params": {}
+    },
+    {
+      "type": "clipboard",
+      "actionId": "clipboard.item13",
+      "name": "常用文本 13",
+      "key": null,
+      "enabled": true,
+      "content": "文本 13",
+      "params": {}
+    },
+    {
+      "type": "clipboard",
+      "actionId": "clipboard.item14",
+      "name": "常用文本 14",
+      "key": null,
+      "enabled": true,
+      "content": "文本 14",
+      "params": {}
+    },
+    {
+      "type": "clipboard",
+      "actionId": "clipboard.item15",
+      "name": "常用文本 15",
+      "key": null,
+      "enabled": true,
+      "content": "文本 15",
+      "params": {}
+    },
+    {
+      "type": "clipboard",
+      "actionId": "clipboard.item16",
+      "name": "常用文本 16",
+      "key": null,
+      "enabled": true,
+      "content": "文本 16",
+      "params": {}
+    },
+    {
+      "type": "clipboard",
+      "actionId": "clipboard.item17",
+      "name": "常用文本 17",
+      "key": "p",
+      "enabled": true,
+      "content": "文本 17",
+      "params": {}
+    },
+    {
+      "type": "script",
+      "actionId": "script.later",
+      "name": "后项脚本",
+      "key": "p",
+      "enabled": true,
+      "content": "true",
+      "params": {}
+    }
+  ]
+}

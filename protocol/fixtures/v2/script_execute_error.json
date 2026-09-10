@@ -1,0 +1,18 @@
+{
+  "event": "response",
+  "actionId": "actions.execute",
+  "execId": "0123456789abcdef",
+  "result": {
+    "code": "ERROR",
+    "msg": "执行失败",
+    "data": {
+      "type": "script",
+      "actionId": "script.test.0",
+      "name": "条目 0",
+      "exitCode": 7,
+      "clipboardWritten": null,
+      "pasteSent": null,
+      "reason": "EXECUTION_FAILED"
+    }
+  }
+}

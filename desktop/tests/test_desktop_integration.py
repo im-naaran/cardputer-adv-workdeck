@@ -93,7 +93,7 @@ async def test_hello_then_one_request_and_disconnect_cleanup():
     assert isinstance(hello, ResponseMessage)
     assert hello.action_id == "system.hello"
     assert "settings" not in hello.result.data
-    assert hello.result.data["capabilities"] == ["actions.list", "actions.shortcut.execute", "codex.usage.read", "scripts.execute", "system.time.read"]
+    assert hello.result.data["capabilities"] == ["actions.execute", "actions.list", "actions.shortcut.execute", "codex.usage.read", "system.time.read"]
 
     request = RequestMessage("request", "codex.usage.read", "exec-1", {})
     await transport.incoming.put(encode_message(request))
@@ -132,7 +132,7 @@ async def test_disabled_action_is_not_advertised_or_called():
     task = asyncio.create_task(app.run_session(transport))
     await transport.wait_for_sent(1)
     hello = decode_message(transport.sent[0][:-1])
-    assert hello.result.data["capabilities"] == ["actions.list", "actions.shortcut.execute", "scripts.execute", "system.time.read"]
+    assert hello.result.data["capabilities"] == ["actions.execute", "actions.list", "actions.shortcut.execute", "system.time.read"]
     await transport.incoming.put(ConnectionError("disconnected"))
     with pytest.raises(ConnectionError):
         await task

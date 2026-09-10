@@ -1,0 +1,16 @@
+{
+  "event": "response",
+  "actionId": "actions.list",
+  "execId": "0123456789abcdef",
+  "result": {
+    "code": "OK",
+    "msg": "完成",
+    "data": {
+      "type": "script",
+      "offset": 0,
+      "total": 0,
+      "nextOffset": null,
+      "actions": []
+    }
+  }
+}

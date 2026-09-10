@@ -1,0 +1,73 @@
+{
+  "event": "response",
+  "actionId": "actions.list",
+  "execId": "0123456789abcdef",
+  "result": {
+    "code": "OK",
+    "msg": "完成",
+    "data": {
+      "type": "clipboard",
+      "offset": 0,
+      "total": 9,
+      "nextOffset": 8,
+      "actions": [
+        {
+          "type": "clipboard",
+          "actionId": "clipboard.test.0",
+          "name": "条目 0",
+          "key": "n",
+          "effectiveKey": "n"
+        },
+        {
+          "type": "clipboard",
+          "actionId": "clipboard.test.1",
+          "name": "条目 1",
+          "key": "n",
+          "effectiveKey": null
+        },
+        {
+          "type": "clipboard",
+          "actionId": "clipboard.test.2",
+          "name": "条目 2",
+          "key": "n",
+          "effectiveKey": null
+        },
+        {
+          "type": "clipboard",
+          "actionId": "clipboard.test.3",
+          "name": "条目 3",
+          "key": "n",
+          "effectiveKey": null
+        },
+        {
+          "type": "clipboard",
+          "actionId": "clipboard.test.4",
+          "name": "条目 4",
+          "key": "n",
+          "effectiveKey": null
+        },
+        {
+          "type": "clipboard",
+          "actionId": "clipboard.test.5",
+          "name": "条目 5",
+          "key": "n",
+          "effectiveKey": null
+        },
+        {
+          "type": "clipboard",
+          "actionId": "clipboard.test.6",
+          "name": "条目 6",
+          "key": "n",
+          "effectiveKey": null
+        },
+        {
+          "type": "clipboard",
+          "actionId": "clipboard.test.7",
+          "name": "条目 7",
+          "key": "n",
+          "effectiveKey": null
+        }
+      ]
+    }
+  }
+}

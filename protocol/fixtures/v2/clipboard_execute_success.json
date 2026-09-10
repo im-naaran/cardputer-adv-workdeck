@@ -1,0 +1,18 @@
+{
+  "event": "response",
+  "actionId": "actions.execute",
+  "execId": "0123456789abcdef",
+  "result": {
+    "code": "OK",
+    "msg": "完成",
+    "data": {
+      "type": "clipboard",
+      "actionId": "clipboard.test.0",
+      "name": "条目 0",
+      "exitCode": null,
+      "clipboardWritten": true,
+      "pasteSent": true,
+      "reason": null
+    }
+  }
+}

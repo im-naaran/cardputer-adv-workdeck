@@ -1,0 +1,32 @@
+{
+  "protocolVersion": 2,
+  "gatt": {
+    "serviceUuid": "5fd5b6a4-60a1-48e1-a4f3-69c9cab741d2",
+    "advToPcNotifyCharacteristicUuid": "a6c791a8-824d-4f3c-8708-0a05c8287ba3",
+    "pcToAdvWriteCharacteristicUuid": "7d913c17-e2dd-4c15-b9c2-d1ba4e372ef3"
+  },
+  "transport": {
+    "maxJsonBytes": 4096,
+    "safeChunkBytes": 20,
+    "advNotifyChunkDelayMs": 10,
+    "lineTerminatorHex": "0a"
+  },
+  "actionIds": [
+    "system.hello",
+    "codex.usage.read",
+    "system.time.read",
+    "actions.list",
+    "actions.execute",
+    "actions.shortcut.execute"
+  ],
+  "resultCodes": [
+    "OK",
+    "NOT_LOGGED_IN",
+    "BUSY",
+    "CODEX_UNAVAILABLE",
+    "TIMEOUT",
+    "INVALID_RESPONSE",
+    "ERROR"
+  ],
+  "actionPageSize": 8
+}

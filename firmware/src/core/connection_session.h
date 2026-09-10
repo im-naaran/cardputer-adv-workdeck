@@ -20,12 +20,16 @@ class ConnectionSession {
   const std::string& computerName() const { return computerName_; }
   bool supports(const std::string& capability) const;
 
+  bool supportsActionType(ActionType type) const;
+  const std::vector<ActionType>& supportedActionTypes() const { return supportedActionTypes_; }
+
  private:
   bool bleConnected_{false};
   bool ready_{false};
   std::string computerId_;
   std::string computerName_;
   std::vector<std::string> capabilities_;
+  std::vector<ActionType> supportedActionTypes_;
 };
 
 }  // namespace adv

@@ -3,7 +3,7 @@
 namespace adv {
 
 void AppShell::beginFrame(DisplayAdapter& display, Module current,
-                          int batteryLevel, bool connected) const {
+                          int batteryLevel) const {
   display.beginFrame(color::kBackground);
   display.fillRoundRect(4, 3, display.width() - 8, 18, 9, color::kAccent);
   for (int index = 0; index < 4; ++index) {
@@ -11,7 +11,6 @@ void AppShell::beginFrame(DisplayAdapter& display, Module current,
                    index == static_cast<int>(current));
   }
   // The fifth 31 px slot remains available for a future module.
-  drawConnectionStatus(display, connected);
   drawBatteryLevel(display, batteryLevel, display.batteryCharging());
 }
 
@@ -33,18 +32,6 @@ void AppShell::drawModuleIcon(DisplayAdapter& display, int index, int x, bool se
     display.drawRoundRect(x + 7, 7, 13, 10, 2, foreground);
     display.fillCircle(x + 13, 12, 2, foreground);
   }
-}
-
-void AppShell::drawConnectionStatus(DisplayAdapter& display, bool connected) const {
-  const uint16_t tint = connected ? color::kAccentText : color::kBorder;
-  const int x = 165;
-  display.drawLine(x + 4, 6, x + 4, 17, tint);
-  display.drawLine(x + 4, 6, x + 9, 10, tint);
-  display.drawLine(x + 9, 10, x + 2, 15, tint);
-  display.drawLine(x + 2, 8, x + 9, 14, tint);
-  display.drawLine(x + 9, 14, x + 4, 17, tint);
-  display.fillCircle(x + 14, 12, 2,
-                     connected ? color::kAccentText : color::kBorder);
 }
 
 void AppShell::drawBatteryLevel(DisplayAdapter& display, int batteryLevel,

@@ -82,7 +82,7 @@ async def test_cancellation_during_spawn_still_reaps(monkeypatch, tmp_path):
 async def test_cleanup_escalates_even_if_shell_exited(monkeypatch):
     runner = ShellScriptRunner(terminate_grace_seconds=0)
     signals = []
-    monkeypatch.setattr(runner, "_group_exists", lambda pid: True)
+    monkeypatch.setattr(runner, "_group_exists", lambda pid: signal.SIGKILL not in signals)
     monkeypatch.setattr(runner, "_signal_group", lambda pid, sig: signals.append(sig))
     class Process:
         pid = 123

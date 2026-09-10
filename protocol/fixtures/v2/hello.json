@@ -1,0 +1,25 @@
+{
+  "event": "response",
+  "actionId": "system.hello",
+  "execId": "0123456789abcdef",
+  "result": {
+    "code": "OK",
+    "msg": "完成",
+    "data": {
+      "protocolVersion": 2,
+      "computerId": "test-mac",
+      "computerName": "测试 Mac",
+      "capabilities": [
+        "codex.usage.read",
+        "system.time.read",
+        "actions.list",
+        "actions.execute",
+        "actions.shortcut.execute"
+      ],
+      "supportedActionTypes": [
+        "script",
+        "clipboard"
+      ]
+    }
+  }
+}

@@ -1,12 +1,14 @@
 # Cardputer ADV Workdeck 共享协议
 
+> 当前两端运行协议 v2，必须配套更新；configVersion 保持 1。`fixtures/v2/` 提供当前动作契约及 v1 拒绝样本，根 fixtures 仅保留两端继续使用的 Codex/授时测试数据。
+
 本目录是 Cardputer-Adv 固件与 macOS 电脑端共同遵循的协议契约。`fixtures/` 中的 JSON 用于跨语言测试；双端实现应从这里复制相同的常量，并用 fixtures 验证编码、解码和兼容行为。
 
 ## 协议常量
 
 | 常量 | 值 |
 | --- | --- |
-| 协议版本 | `1` |
+| 协议版本 | `2` |
 | GATT Service UUID | `5fd5b6a4-60a1-48e1-a4f3-69c9cab741d2` |
 | ADV → PC notify Characteristic UUID | `a6c791a8-824d-4f3c-8708-0a05c8287ba3` |
 | PC → ADV write Characteristic UUID | `7d913c17-e2dd-4c15-b9c2-d1ba4e372ef3` |
@@ -56,12 +58,12 @@ data 包含 `epochMilliseconds`（非负 int64 UTC Unix 毫秒）和 `utcOffsetM
 
 `system.hello` 的 `result.data` 包含：
 
-- `protocolVersion`：当前为 `1`，不兼容时不得进入业务同步。
+- `protocolVersion`：当前为 `2`，不兼容时不得进入业务同步。
 - `computerId`：电脑端生成的稳定本机标识，不是 BLE MAC。
 - `computerName`：供设备展示的名称。
 - `capabilities`：当前电脑端支持的业务动作列表。
 
-新 hello 不携带 settings。旧 hello 的 `settings.codexRefreshIntervalSeconds` 作为未知字段忽略，不能覆盖 ADV 配置。协议版本仍为 1；旧固件在该字段缺失时回退到自身默认周期。
+新 hello 不携带 settings。旧 hello 的 `settings.codexRefreshIntervalSeconds` 作为未知字段忽略，不能覆盖 ADV 配置。协议 v1 的 hello 在当前会话层拒绝；未知 settings 字段不覆盖 ADV 本地配置。
 
 ## Codex 用量契约
 
@@ -98,11 +100,10 @@ ADV 在有效 hello 后按 capability 发起请求，先提交授时、再提交
 
 ## Fixtures
 
+根目录的 9 个 JSON 覆盖未改变的 Codex 与授时消息，不代表仍支持 v1。
+
 | 文件 | 场景 |
 | --- | --- |
-| `protocol_constants.json` | 双端共享常量清单 |
-| `hello_response.json` | 旧 hello，保留 settings 及 Codex-only 能力以验证兼容 |
-| `hello_without_settings.json` | 不携带周期配置的 hello |
 | `codex_usage_request.json` | ADV 查询请求 |
 | `codex_usage_success_single_window.json` | 单窗口成功响应 |
 | `codex_usage_success_multi_window.json` | 多额度桶、多窗口成功响应 |
@@ -122,27 +123,52 @@ ADV 在有效 hello 后按 capability 发起请求，先提交授时、再提交
 以下命令在项目根目录检查 JSON 语法：
 
 ```sh
-jq empty protocol/fixtures/*.json
+jq empty protocol/fixtures/*.json protocol/fixtures/v2/*.json
 ```
 
 双端契约用例分别位于 `firmware/test/test_protocol/`、`desktop/tests/test_messages.py` 和 `desktop/tests/test_protocol_constants.py`。JSON 语法检查不替代这些语义断言；首次查询、重连和分片顺序由双端集成用例覆盖。
 
-## 脚本与分页目录契约
+## v2 统一动作契约
 
-hello 仅新增 `actions.list`、`scripts.execute`、`actions.shortcut.execute` 三个固定能力，不列出每条脚本 ID。配置总条数没有业务上限；每页最多 8 条只限制设备缓存和单帧大小。
+协议版本为 2，配置版本仍为 1；GATT、JSONL、4096 字节上限、20 字节分片不变。
+固件和桌面必须配套更新，v1 hello 拒绝进入 v2 业务会话，不降级或重放请求。
+`fixtures/v2/hello_v1_rejected.json` 是结构合法但版本不兼容的会话样本。
 
-| 请求 actionId | payload | 成功 data |
+hello 新增 `supportedActionTypes`：由执行器可用性生成的 script/clipboard 无重复子集，
+与目录条数无关；权限不足在执行时报告。动作仅注册 `actions.list`、`actions.execute`、
+`actions.shortcut.execute`；移除 `scripts.execute`。Codex 和授时消息不变。
+
+| 动作 | 严格请求 payload | 响应 data |
 | --- | --- | --- |
-| actions.list | `{"offset":0}` | `{"offset":0,"total":9,"nextOffset":8,"actions":[...]}` |
-| scripts.execute | `{"actionId":"script.google.open"}` | `{"actionId":"script.google.open","name":"打开 Google","exitCode":0}` |
-| actions.shortcut.execute | `{"key":"g"}` | 同上，包含实际匹配脚本的 ID/名称 |
+| actions.list | type=script/clipboard、offset | type、offset、total、nextOffset、actions |
+| actions.execute | actionId | 统一执行结果 |
+| actions.shortcut.execute | 单个小写字母 key | 统一执行结果 |
 
-列表项含 type=script、actionId、name、key、effectiveKey。两个 key 均为 null 或单个小写 ASCII 字母；effectiveKey 非空时等于 key。重复 key 合法，仅完整配置的首个有效启用匹配项有 effectiveKey，后续项仍可按 ID 执行。电脑匹配全局键，不依赖设备加载页面。
+每种类型独立分页，每页最多 8 项，无条目总数业务上限。分页数值必须为 uint64 整数，
+offset 按 8 对齐；空目录仅 offset=0，非空目录 offset<total；非末页恰好 8 项、nextOffset=offset+8，末页 nextOffset=null。先按完整有效启用配置顺序计算
+全局 effectiveKey，再按类型分页。重复 key 仅首项生效，不可用首项也不回退执行后项。
+目录项含 type、actionId、name、key、effectiveKey，不发送正文、params、enabled。
+ID 使用对应的 script./clipboard. 前缀与非空 ASCII 标识符后缀，总长最多 64 字节；
+name 最多 64 UTF-8 字节，不含 ASCII 控制字符。元数据允许无害未知字段，不能携带正文。
 
-offset 为非负整数且是 8 的倍数；total/offset/nextOffset 使用 uint64 表示。非空目录 offset 必须小于 total，空目录仅允许 offset=0。非末页返回 8 项且 nextOffset=offset+8，末页返回剩余项且 nextOffset=null。必需字段不得缺省；配置在服务运行期间不热更新，跨页 total 必须一致。单次只缓存当前页，断线清理；页/会话关联由控制器核验。
+统一执行结果必含 `type/actionId/name/exitCode/clipboardWritten/pasteSent/reason`。
+外层 actionId/execId 回显请求，data.actionId 是实际配置 ID。
 
-脚本 ID 为 `script.` 加非空 ASCII 字母/数字/点/下划线/连字符，最多 64 字节；名称非空、最多 64 UTF-8 字节、不含 ASCII 控制字符。目录不发送命令、参数或输出。整帧（包括转义和最长 execId）仍必须 <=4096 字节，超限返回 ERROR 而不是删去配置条目。
+- script：exitCode 为 int32 或 null；两个粘贴状态均为 null；OK 必须 exitCode=0。
+- clipboard：exitCode=null；两个状态严格为布尔或 null（结果未确认），OK 必须均为 true。
+  pasteSent=true 必须以 clipboardWritten=true 为前提；调用超时不得将未知结果写成 false。
+- reason 成功为 null，失败类别为 UNAVAILABLE、PERMISSION_DENIED、WRITE_FAILED、
+  PASTE_FAILED、UNCONFIRMED、EXECUTION_FAILED；未解析目标或 BUSY 可 data=null。
+- 顶层 code 沿用原集合，业务使用 OK/ERROR/BUSY/TIMEOUT；成功只表示系统操作已发送，
+  不证明目标控件实际插入。错误不包含原始 stderr 或正文。
 
-执行响应外层 actionId 原样回显协议动作，data.actionId 才是实际脚本。OK 必须 exitCode 为整数 0；已解析脚本的 ERROR/TIMEOUT 包含 ID/名称，exitCode 可为空；未解析动作或 BUSY 的 data 可为 null。设备不自动重放副作用请求，超时/断线不能证明电脑没有执行。请求只接受表中 payload 字段，未绑定键/禁用或不存在 ID 返回 ERROR。
+脚本与粘贴共用一个执行槽，忙时拒绝、不排队。写入失败不继续粘贴，部分失败返回状态；
+超时、断线、重连不自动重放。设备校验外层动作、execId、类型及预期 ID，并清理旧会话。
 
-`actions_page_*.json`、`script_execute_*.json`、`script_shortcut_*.json` 和 `actions_list_request.json` 为双端共享样例。新增能力不影响旧桌面 Codex/授时协商。
+v2 fixtures 分开提供两类目录、执行与快捷成功、写入/部分失败、超时、BUSY、无匹配、
+非法请求/分页/伪成功。`invalid_*.json` 必须拒绝；v1 拒绝样本在会话层检查。
+独立契约检查位于 `desktop/tests/test_action_contract.py`，固件 `test_protocol` 同样消费 v2 fixtures。
+
+`v2/` 的 27 个 JSON 均由桌面参数化契约测试读取；其中 26 个消息样本也由固件协议测试读取。
+`v2/protocol_constants.json` 由桌面常量一致性测试读取，不是可发送的消息。
+`hello_v1_rejected.json` 专门验证拒绝旧版连接，需要保留。

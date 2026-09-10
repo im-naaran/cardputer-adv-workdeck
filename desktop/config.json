@@ -36,6 +36,15 @@
       "params": {
         "timeoutSeconds": 15
       }
+    },
+    {
+      "type": "clipboard",
+      "actionId": "clipboard.npm_install",
+      "name": "npm install",
+      "key": "p",
+      "enabled": true,
+      "content": "npm install",
+      "params": {}
     }
   ]
 }
