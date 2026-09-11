@@ -30,6 +30,12 @@ void applyFont(Gfx& gfx, FontStyle style) {
 void DisplayAdapter::begin() {
 #ifdef ARDUINO
   auto config = M5.config();
+  // Workdeck does not use motion or audio. Keep the keyboard I2C bus enabled.
+  // Skipping initialization is not proof that every powered device is shut down.
+  config.internal_imu = false;
+  config.external_imu = false;
+  config.internal_mic = false;
+  config.internal_spk = false;
   M5Cardputer.begin(config, true);
   M5Cardputer.Display.setRotation(1);
   M5Cardputer.Display.setTextDatum(top_left);
@@ -40,6 +46,8 @@ void DisplayAdapter::begin() {
 void DisplayAdapter::setBrightness(uint8_t brightness) {
 #ifdef ARDUINO
   M5Cardputer.Display.setBrightness(brightness);
+#elif defined(ADV_NATIVE_TEST)
+  brightness_ = brightness; ++brightnessChanges_; pushesAtBrightness_ = pushes_;
 #else
   (void)brightness;
 #endif
@@ -61,24 +69,10 @@ int DisplayAdapter::height() const {
 #endif
 }
 
-int DisplayAdapter::batteryLevel() const {
-#ifdef ARDUINO
-  const int level = M5Cardputer.Power.getBatteryLevel();
-  return level >= 0 && level <= 100 ? level : -1;
-#else
-  return -1;
-#endif
-}
-
-bool DisplayAdapter::batteryCharging() const {
-#ifdef ARDUINO
-  return M5Cardputer.Power.isCharging() == m5::Power_Class::is_charging;
-#else
-  return false;
-#endif
-}
-
 void DisplayAdapter::beginFrame(uint16_t color) {
+#ifdef ADV_NATIVE_TEST
+  ++frames_;
+#endif
 #ifdef ARDUINO
   // Allocation is delayed until the first frame, after BLE initialization in
   // setup(), so the optional framebuffer cannot starve the transport stack.
@@ -99,6 +93,9 @@ void DisplayAdapter::beginFrame(uint16_t color) {
 }
 
 void DisplayAdapter::endFrame() {
+#ifdef ADV_NATIVE_TEST
+  ++pushes_;
+#endif
 #ifdef ARDUINO
   if (frameReady) frame.pushSprite(0, 0);
   else M5Cardputer.Display.endWrite();

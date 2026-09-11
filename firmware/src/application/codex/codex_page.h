@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <array>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -33,11 +34,15 @@ class CodexPage {
   void scroll(int delta, size_t rowCount);
   CodexPageView makeView(const CodexUsageState& state, uint32_t nowMs,
                         ScheduledTaskSnapshot task) const;
+  bool timeChanged(const CodexUsageState& state, uint32_t nowMs, ScheduledTaskSnapshot task) const;
+  void invalidateTimeSnapshot() { timeSnapshotValid_ = false; }
   void render(DisplayAdapter& display, const CodexUsageState& state, uint32_t nowMs,
-              ScheduledTaskSnapshot task) const;
+              ScheduledTaskSnapshot task);
   size_t scrollOffset() const { return scrollOffset_; }
  private:
   size_t scrollOffset_{0};
+  std::array<std::string, 3> timeSnapshot_{};
+  bool timeSnapshotValid_{false};
 };
 
 }  // namespace adv

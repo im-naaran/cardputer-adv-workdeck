@@ -1,6 +1,7 @@
 #pragma once
 #include <unity.h>
 #include <vector>
+#include <functional>
 #include "application/wifi/wifi_service.h"
 using namespace adv;
 namespace adv { struct WifiServiceTestAccess { static void exhaust(WifiService& s) { s.lastId_ = UINT64_MAX; } }; }
@@ -13,6 +14,7 @@ struct Store : ConfigFileStore {
 };
 struct Adapter : WifiAdapter {
   int connects{0}, scans{0}, stops{0}, disconnects{0}, offs{0};
+  std::function<void()> afterOff;
   bool startOk{true}, stopOk{true}, disconnectOk{true}, offOk{true};
   WifiConfig credentials;
   WifiConnectionSnapshot snapshot;
@@ -24,7 +26,7 @@ struct Adapter : WifiAdapter {
   WifiNetwork scanResult(size_t index) const override { return networks.at(index); }
   bool stopScan() override { ++stops; networks.clear(); return stopOk; }
   bool disconnectAndClearAuth() override { ++disconnects; return disconnectOk; }
-  bool powerOff() override { ++offs; return offOk; }
+  bool powerOff() override { ++offs; if (afterOff) afterOff(); return offOk; }
 };
 struct Fixture {
   Store store; WifiConfigService config{store}; Adapter adapter; Clock clock;

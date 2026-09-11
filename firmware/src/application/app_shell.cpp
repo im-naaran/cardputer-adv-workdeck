@@ -3,7 +3,7 @@
 namespace adv {
 
 void AppShell::beginFrame(DisplayAdapter& display, Module current,
-                          int batteryLevel) const {
+                          const BatterySnapshot& battery) const {
   display.beginFrame(color::kBackground);
   display.fillRoundRect(4, 3, display.width() - 8, 18, 9, color::kAccent);
   for (int index = 0; index < 4; ++index) {
@@ -11,7 +11,7 @@ void AppShell::beginFrame(DisplayAdapter& display, Module current,
                    index == static_cast<int>(current));
   }
   // The fifth 31 px slot remains available for a future module.
-  drawBatteryLevel(display, batteryLevel, display.batteryCharging());
+  drawBatteryLevel(display, battery.level, battery.charging);
 }
 
 void AppShell::drawModuleIcon(DisplayAdapter& display, int index, int x, bool selected) const {

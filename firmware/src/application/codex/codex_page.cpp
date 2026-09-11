@@ -8,6 +8,15 @@
 
 namespace adv {
 namespace {
+std::array<std::string, 3> visibleTimes(const CodexPageView& view) {
+  std::array<std::string, 3> result{};
+  result[0] = view.refreshing ? "刷新中" : view.footer;
+  if (view.centerMessage.empty()) {
+    for (size_t i = 0; i < 2 && view.scrollOffset + i < view.rows.size(); ++i)
+      result[i + 1] = view.rows[view.scrollOffset + i].resetText;
+  }
+  return result;
+}
 bool displaySafe(const std::string& text) {
   // Reject controls and four-byte Unicode (typically emoji) absent from efontCN_16.
   for (size_t i = 0; i < text.size();) {
@@ -142,9 +151,17 @@ CodexPageView CodexPage::makeView(const CodexUsageState& state, uint32_t nowMs, 
   return view;
 }
 
+bool CodexPage::timeChanged(const CodexUsageState& state, uint32_t nowMs,
+                            ScheduledTaskSnapshot task) const {
+  return !timeSnapshotValid_ || visibleTimes(makeView(state, nowMs, task)) != timeSnapshot_;
+}
+
 void CodexPage::render(DisplayAdapter& display, const CodexUsageState& state,
-                       uint32_t nowMs, ScheduledTaskSnapshot task) const {
+                       uint32_t nowMs, ScheduledTaskSnapshot task) {
   const CodexPageView view = makeView(state, nowMs, task);
+  // Cache only on actual drawing, never on an off-screen periodic check.
+  timeSnapshot_ = visibleTimes(view);
+  timeSnapshotValid_ = true;
   // Reserve task status before any center-state early return; truncate only secondary detail.
   display.drawText(view.automaticLabel, 6, 118, color::kMuted, FontStyle::kChinese);
   const int detailX = 12 + display.textWidth(view.automaticLabel, FontStyle::kChinese);

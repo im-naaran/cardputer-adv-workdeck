@@ -30,7 +30,25 @@ std::vector<KeyEvent> KeyPressTracker::update(const InputSnapshot& snapshot) {
            snapshot.ctrl, snapshot.shift, snapshot.opt, text}};
 }
 
-void KeyboardAdapter::begin() { tracker_ = KeyPressTracker{}; pending_.clear(); }
+void KeyboardAdapter::begin() {
+  tracker_ = KeyPressTracker{}; pending_.clear(); physical_ = {}; activity_ = {};
+}
+
+void KeyboardAdapter::updateSnapshot(const InputSnapshot& snapshot) {
+  std::array<bool, 261> next{};
+  for (size_t i = 0; i < snapshot.pressed.size(); ++i) next[i] = snapshot.pressed[i];
+  next[256] = snapshot.fn; next[257] = snapshot.alt; next[258] = snapshot.ctrl;
+  next[259] = snapshot.shift; next[260] = snapshot.opt;
+  activity_ = {};
+  for (size_t i = 0; i < next.size(); ++i) {
+    activity_.anyDown |= next[i];
+    activity_.changed |= next[i] != physical_[i];
+    activity_.pressedThisUpdate |= next[i] && !physical_[i];
+  }
+  physical_ = next;
+  const auto events = tracker_.update(snapshot);
+  pending_.insert(pending_.end(), events.begin(), events.end());
+}
 
 void KeyboardAdapter::update() {
 #ifdef ARDUINO
@@ -56,8 +74,7 @@ void KeyboardAdapter::update() {
         break;
     }
   }
-  const auto events = tracker_.update(snapshot);
-  pending_.insert(pending_.end(), events.begin(), events.end());
+  updateSnapshot(snapshot);
 #endif
 }
 

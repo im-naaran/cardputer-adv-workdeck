@@ -66,6 +66,47 @@ void persistence() {
   TEST_ASSERT_TRUE(service.save(next).status==ConfigStatus::kReloadFailed);
   TEST_ASSERT_TRUE(service.saved()==DisplayConfig{3});
 }
+void timeout_config() {
+  const auto legacy = parseDisplayConfig("{\"brightnessLevel\":2}");
+  TEST_ASSERT_TRUE(legacy.status == ConfigStatus::kOk);
+  TEST_ASSERT_EQUAL(600, legacy.config.autoScreenOffSeconds);
+  for (uint32_t seconds : {0u, 60u, 300u, 600u, 1800u}) {
+    DisplayConfig desired{2, seconds};
+    const auto result = parseDisplayConfig(encodeDisplayConfig(desired));
+    TEST_ASSERT_TRUE(result.status == ConfigStatus::kOk);
+    TEST_ASSERT_TRUE(result.config == desired);
+  }
+  for (const auto value : {"1", "-1", "true", "null", "60.5", "\"60\"", "4294967296"}) {
+    const auto json = std::string("{\"brightnessLevel\":2,\"autoScreenOffSeconds\":") + value + "}";
+    TEST_ASSERT_TRUE(parseDisplayConfig(json).status == ConfigStatus::kInvalidConfig);
+  }
+  Store store; DisplayConfigService service(store);
+  store.files["/config/display.json"] = "{\"brightnessLevel\":2}";
+  TEST_ASSERT_TRUE(service.save(encodeDisplayConfig({2, 600})).status == ConfigStatus::kOk);
+  TEST_ASSERT_EQUAL(0, store.writes);
+  TEST_ASSERT_TRUE(service.save(encodeDisplayConfig({2, 60})).status == ConfigStatus::kOk);
+  TEST_ASSERT_EQUAL(1, store.writes);
+  TEST_ASSERT_EQUAL(60, service.saved().autoScreenOffSeconds);
+  TEST_ASSERT_TRUE(service.save(encodeDisplayConfig({2, 60})).status == ConfigStatus::kOk);
+  TEST_ASSERT_EQUAL(1, store.writes);
+}
+void embedded_nul_field_names_are_rejected() {
+  Store store; DisplayConfigService service(store);
+  const auto original = encodeDisplayConfig({2, 60});
+  TEST_ASSERT_TRUE(service.save(original).status == ConfigStatus::kOk);
+  const int writes = store.writes;
+  for (const auto* json : {
+      R"({"brightnessLevel":3,"autoScreenOffSeconds\u0000extra":60})",
+      R"({"brightnessLevel":3,"brightnessLevel\u0000extra":2})",
+      R"({"brightnessLevel":3,"autoScreenOffSeconds\u0000":60})"}) {
+    TEST_ASSERT_TRUE(parseDisplayConfig(json).status == ConfigStatus::kInvalidConfig);
+    TEST_ASSERT_TRUE(service.save(json).status == ConfigStatus::kInvalidConfig);
+    TEST_ASSERT_EQUAL(writes, store.writes);
+    TEST_ASSERT_EQUAL_STRING(original.c_str(), store.files["/config/display.json"].c_str());
+    TEST_ASSERT_EQUAL(2, service.saved().brightnessLevel);
+    TEST_ASSERT_EQUAL(60, service.saved().autoScreenOffSeconds);
+  }
+}
 void validation() {
   TEST_ASSERT_EQUAL(3,DisplayConfig{}.brightnessLevel);
   for (uint8_t n=1;n<=5;++n) TEST_ASSERT_TRUE(parseDisplayConfig(encodeDisplayConfig({n})).status==ConfigStatus::kOk);
@@ -77,4 +118,4 @@ void validation() {
   TEST_ASSERT_TRUE(parseDisplayConfig("{\"brightnessLevel\":3} \r\n").status==ConfigStatus::kOk);
 }
 }
-int main(int,char**) { UNITY_BEGIN(); RUN_TEST(validation); RUN_TEST(persistence); return UNITY_END(); }
+int main(int,char**) { UNITY_BEGIN(); RUN_TEST(embedded_nul_field_names_are_rejected); RUN_TEST(timeout_config); RUN_TEST(validation); RUN_TEST(persistence); return UNITY_END(); }

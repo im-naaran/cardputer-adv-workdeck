@@ -3,6 +3,10 @@
 
 namespace adv {
 namespace {
+constexpr uint32_t screenTimeouts[] = {0, 60, 300, 600, 1800};
+std::string screenTimeoutText(uint32_t seconds) {
+  return seconds ? std::to_string(seconds / 60) + "分钟" : "永不";
+}
 const char* const fields[] = {"SSID", "用户名", "密码"};
 std::string fieldValue(const WifiConfig& config, size_t field) {
   return field == 0 ? config.ssid : field == 1 ? config.username : config.password;
@@ -103,6 +107,22 @@ bool SettingsPage::handle(Module module, const RoutedInput& input, uint32_t now)
     if (key == Key::kRight || key == Key::kDown) next = std::min(5, level + 1);
     if (key == Key::kTab) next = level % 5 + 1;
     if (next != level) { controller_.setBrightness(next); feedback(controller_.displayMessage()); }
+    else if (key == Key::kEnter && controller_.displaySaveFailed()) {
+      controller_.saveDisplay(); feedback(controller_.displayMessage());
+    }
+    return true;
+  }
+  if (screen_ == SettingsScreen::kAutoScreenOff) {
+    size_t index = 0;
+    while (index < 4 && screenTimeouts[index] != controller_.autoScreenOffSeconds()) ++index;
+    size_t next = index;
+    if ((key == Key::kLeft || key == Key::kUp) && next) --next;
+    if ((key == Key::kRight || key == Key::kDown) && next < 4) ++next;
+    if (key == Key::kTab) next = (next + 1) % 5;
+    if (next != index) { controller_.setAutoScreenOff(screenTimeouts[next]); feedback(controller_.displayMessage()); }
+    else if (key == Key::kEnter && controller_.displaySaveFailed()) {
+      controller_.saveDisplay(); feedback(controller_.displayMessage());
+    }
     return true;
   }
   if (screen_ == SettingsScreen::kCodex) {
@@ -128,7 +148,7 @@ bool SettingsPage::handle(Module module, const RoutedInput& input, uint32_t now)
   feedback_.clear();
   if (screen_ == SettingsScreen::kHome) {
     homeFocus_ = focus_;
-    enter(focus_ == 0 ? SettingsScreen::kBrightness : focus_ == 1 ? SettingsScreen::kWifi : SettingsScreen::kCodex);
+    enter(focus_ == 0 ? SettingsScreen::kBrightness : focus_ == 1 ? SettingsScreen::kWifi : focus_ == 2 ? SettingsScreen::kCodex : SettingsScreen::kAutoScreenOff);
   } else if (screen_ == SettingsScreen::kWifi) {
     if (focus_ < 3) edit(focus_);
     else if (focus_ == 3) { if (controller_.scan()) enter(SettingsScreen::kScan); else feedback(controller_.wifiMessage()); }
@@ -147,7 +167,8 @@ bool SettingsPage::handle(Module module, const RoutedInput& input, uint32_t now)
 std::vector<std::string> SettingsPage::rows() const {
   switch (screen_) {
     case SettingsScreen::kHome: return {"屏幕亮度 " + std::to_string(controller_.brightnessLevel()*20) + "%",
-        "Wi-Fi " + controller_.wifiSummary(), "Codex自动刷新 " + (minutesDirty_ ? minutes_ + "分钟 未保存" : intervalText(controller_.intervalSeconds()))};
+        "Wi-Fi " + controller_.wifiSummary(), "Codex自动刷新 " + (minutesDirty_ ? minutes_ + "分钟 未保存" : intervalText(controller_.intervalSeconds())),
+        "自动息屏 " + screenTimeoutText(controller_.autoScreenOffSeconds())};
     case SettingsScreen::kWifi: return {"SSID：" + controller_.draft().ssid, "用户名：" + controller_.draft().username,
         "密码：" + controller_.draft().password, "扫描网络", "保存", "测试连接", "查看网络信息"};
     case SettingsScreen::kScan: {
@@ -197,6 +218,14 @@ void SettingsPage::render() {
     if (!feedback_.empty()) draw(feedback_, 86, color::kMuted);
     return;
   }
+  if (screen_ == SettingsScreen::kAutoScreenOff) {
+    draw("自动息屏", 25, color::kAccent);
+    draw("< " + screenTimeoutText(controller_.autoScreenOffSeconds()) + " >", 51);
+    const auto text = controller_.displaySaveFailed() ? controller_.displayMessage() : feedback_;
+    if (!text.empty()) draw(text, 78, controller_.displaySaveFailed() ? color::kRed : color::kMuted);
+    if (controller_.displaySaveFailed()) draw("Enter重试保存", 100, color::kMuted);
+    return;
+  }
   if (screen_ == SettingsScreen::kCodex) {
     draw("Codex自动刷新", 25, color::kAccent);
     draw("<  " + (minutes_.empty() ? intervalText(controller_.intervalSeconds()) : minutes_ + "分钟") + "  >", 51);
@@ -222,7 +251,7 @@ void SettingsPage::render() {
   const bool isHome = screen_ == SettingsScreen::kHome;
   if (!isHome) draw(screen_ == SettingsScreen::kWifi ? "Wi-Fi" : "扫描网络 " + controller_.wifiSummary(), 25, color::kAccent);
   const auto items = rows(); focus_ = std::min(focus_, items.size()-1);
-  const size_t visible = isHome ? 3 : 5;
+  const size_t visible = isHome ? 4 : 5;
   const size_t start = focus_ < visible ? 0 : focus_ - visible + 1;
   for (size_t i = start; i < items.size() && i < start+visible; ++i) {
     const int y = (isHome ? 27 : 44)+(i-start)*18;

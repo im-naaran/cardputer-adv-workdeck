@@ -29,7 +29,7 @@ struct SettingsFixture {
   DisplayConfigService displayConfig{store}; WifiConfigService wifiConfig{store};
   WifiService wifi{wifiConfig,adapter,clock};
   int brightness{0}, applies{0};
-  SettingsController controller{displayConfig,codexConfig,codex,wifiConfig,wifi,[&](uint8_t value){brightness=value;++applies;}};
+  SettingsController controller{displayConfig,codexConfig,codex,wifiConfig,wifi,[&](const DisplayConfig& value){brightness=value.brightnessLevel*51;++applies;}};
   DisplayAdapter display; SettingsPage page{controller,display}; InputRouter router;
   SettingsFixture() { codex.begin(0); }
   void boot() { controller.loadBrightness(); codexConfig.reload(); controller.refreshCodex(); controller.loadWifi(); }

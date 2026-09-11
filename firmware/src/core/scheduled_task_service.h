@@ -4,7 +4,7 @@
 #include <functional>
 
 namespace adv {
-enum class ScheduledTaskId { kSystemTimeSync, kCodexUsageRefresh, kDisplayRefresh };
+enum class ScheduledTaskId { kSystemTimeSync, kCodexUsageRefresh, kDisplayRefresh, kBatterySample };
 struct ScheduledTaskConfig {
   ScheduledTaskId id;
   uint32_t intervalMs;

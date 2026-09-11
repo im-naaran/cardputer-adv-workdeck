@@ -1,6 +1,7 @@
 #pragma once
 
 #include "core/navigation_service.h"
+#include "platform/battery_adapter.h"
 #include "platform/display_adapter.h"
 
 namespace adv {
@@ -9,7 +10,7 @@ class AppShell {
  public:
   static constexpr int kTopBarHeight = 24;
 
-  void beginFrame(DisplayAdapter& display, Module current, int batteryLevel) const;
+  void beginFrame(DisplayAdapter& display, Module current, const BatterySnapshot& battery) const;
   void renderDisconnected(DisplayAdapter& display) const;
   void renderFeedback(DisplayAdapter& display, const std::string& text) const;
   void endFrame(DisplayAdapter& display) const;

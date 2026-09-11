@@ -35,7 +35,7 @@
 
 ## 依据
 
-- `docs/requirements-draft.md` 第 12 节及本次用户指令。
+- 本次用户指令及[设置模块需求规格](requirements.md)：离线设置亮度、Wi-Fi 配置/扫描/测试和 Codex 刷新周期；复用持久化与调度能力，BLE 管理和设备版本页不纳入本期。
 - `README.md`、`firmware/platformio.ini`。
 - `firmware/src/main.cpp`、`application/app_shell.cpp`。
 - `platform/display_adapter.*`、`platform/keyboard_adapter.cpp`、`core/input_router.cpp`。

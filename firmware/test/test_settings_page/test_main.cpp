@@ -73,4 +73,18 @@ void bounds_and_network_retry() {
   TEST_ASSERT_TRUE(f.controller.operation().phase==WifiPhase::kOff);
   f.key(Key::kBackspace);TEST_ASSERT_EQUAL(5,f.page.focus());
 }
-int main(int,char**) { UNITY_BEGIN();RUN_TEST(tab_navigation_brightness_and_minutes);RUN_TEST(legacy_seconds_no_implicit_save);RUN_TEST(text_symbols_utf8_limits_and_page_preservation);RUN_TEST(network_info_and_scan_selection);RUN_TEST(autosave_coalesces_and_retries_after_failure);RUN_TEST(bounds_and_network_retry);return UNITY_END(); }
+void screen_timeout_page_and_retry() {
+  SettingsFixture f; f.boot();
+  for(int i=0;i<3;++i) f.key(Key::kTab);
+  f.key(Key::kEnter); TEST_ASSERT_TRUE(f.page.screen()==SettingsScreen::kAutoScreenOff);
+  f.key(Key::kRight); TEST_ASSERT_EQUAL(1800,f.controller.autoScreenOffSeconds());
+  f.key(Key::kTab); TEST_ASSERT_EQUAL(0,f.controller.autoScreenOffSeconds());
+  f.store.failWrite=true; f.key(Key::kTab);
+  TEST_ASSERT_EQUAL(60,f.controller.autoScreenOffSeconds()); TEST_ASSERT_TRUE(f.controller.displaySaveFailed());
+  f.page.tick(5000); f.page.render();
+  f.store.failWrite=false; f.key(Key::kEnter); TEST_ASSERT_FALSE(f.controller.displaySaveFailed());
+  TEST_ASSERT_EQUAL(60,f.displayConfig.saved().autoScreenOffSeconds);
+  f.key(Key::kBackspace); TEST_ASSERT_EQUAL(3,f.page.focus()); f.page.render();
+  f.key(Key::kTab); TEST_ASSERT_EQUAL(0,f.page.focus());
+}
+int main(int,char**) { UNITY_BEGIN();RUN_TEST(screen_timeout_page_and_retry);RUN_TEST(tab_navigation_brightness_and_minutes);RUN_TEST(legacy_seconds_no_implicit_save);RUN_TEST(text_symbols_utf8_limits_and_page_preservation);RUN_TEST(network_info_and_scan_selection);RUN_TEST(autosave_coalesces_and_retries_after_failure);RUN_TEST(bounds_and_network_retry);return UNITY_END(); }

@@ -11,9 +11,20 @@ DisplayConfigResult parseDisplayConfig(const std::string& json) {
   if (json.size() > kMaxConfigBytes) return result;
   JsonDocument doc;
   ConfigInput input{json};
-  if (deserializeJson(doc, input) || !doc.is<JsonObject>() || doc.size() != 1) return result;
+  if (deserializeJson(doc, input) || !doc.is<JsonObject>()) return result;
   for (int tail = input.read(); tail >= 0; tail = input.read()) {
     if (tail != ' ' && tail != '\t' && tail != '\r' && tail != '\n') return result;
+  }
+  for (JsonPair field : doc.as<JsonObject>()) {
+    // Preserve embedded NULs so an unknown field cannot match a valid prefix.
+    const std::string key(field.key().c_str(), field.key().size());
+    if (key != "brightnessLevel" && key != "autoScreenOffSeconds") return result;
+  }
+  // Legacy brightness-only files retain the default ten-minute timeout.
+  if (!doc["autoScreenOffSeconds"].isUnbound()) {
+    const auto seconds = doc["autoScreenOffSeconds"];
+    if (!seconds.is<uint32_t>() || seconds.is<bool>()) return result;
+    result.config.autoScreenOffSeconds = seconds.as<uint32_t>();
   }
   auto level = doc["brightnessLevel"];
   if (!level.is<uint8_t>() || level.is<bool>()) return result;
@@ -22,7 +33,8 @@ DisplayConfigResult parseDisplayConfig(const std::string& json) {
   return result;
 }
 std::string encodeDisplayConfig(const DisplayConfig& config) {
-  return "{\"brightnessLevel\":" + std::to_string(config.brightnessLevel) + "}";
+  return "{\"brightnessLevel\":" + std::to_string(config.brightnessLevel) +
+         ",\"autoScreenOffSeconds\":" + std::to_string(config.autoScreenOffSeconds) + "}";
 }
 
 DisplayConfigResult DisplayConfigService::read() {

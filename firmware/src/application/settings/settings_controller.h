@@ -9,16 +9,20 @@ class SettingsController {
  public:
   SettingsController(DisplayConfigService& display, CodexConfigService& config,
                      CodexController& codex, WifiConfigService& wifiConfig,
-                     WifiService& wifi, std::function<void(uint8_t)> brightness)
+                     WifiService& wifi, std::function<void(const DisplayConfig&)> applyDisplay)
       : display_(display), config_(config), codex_(codex), wifiConfig_(wifiConfig),
-        wifi_(wifi), brightness_(std::move(brightness)) {}
+        wifi_(wifi), applyDisplay_(std::move(applyDisplay)) {}
   void loadBrightness();
   void loadWifi();
   void refreshCodex();
   void refreshWifi();
   void setBrightness(int level);
+  void setAutoScreenOff(uint32_t seconds);
+  void saveDisplay();
+  bool displaySaveFailed() const { return displaySaveFailed_; }
+  uint32_t autoScreenOffSeconds() const { return activeDisplay_.autoScreenOffSeconds; }
   bool saveMinutes(const std::string& text);
-  uint8_t brightnessLevel() const { return level_; }
+  uint8_t brightnessLevel() const { return activeDisplay_.brightnessLevel; }
   uint32_t intervalSeconds() const { return codex_.taskState().intervalMs / 1000; }
   const ConfigResult& savedCodex() const { return savedCodex_; }
   const std::string& displayMessage() const { return displayMessage_; }
@@ -38,14 +42,16 @@ class SettingsController {
   std::string wifiDetails() const;
  private:
   bool accept(WifiRequest request);
+  bool observeWifi();
   bool validateWifi();
   DisplayConfigService& display_;
   CodexConfigService& config_;
   CodexController& codex_;
   WifiConfigService& wifiConfig_;
   WifiService& wifi_;
-  std::function<void(uint8_t)> brightness_;
-  uint8_t level_{3};
+  std::function<void(const DisplayConfig&)> applyDisplay_;
+  DisplayConfig activeDisplay_{};
+  bool displaySaveFailed_{false};
   ConfigResult savedCodex_{};
   WifiConfig draft_{}, saved_{}, tested_{};
   bool savedValid_{false}, haveTest_{false};

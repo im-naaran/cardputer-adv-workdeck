@@ -40,6 +40,10 @@ struct InputSnapshot {
   std::array<char, 256> shifted{};
 };
 
+struct KeyboardActivity {
+  bool anyDown{false}, changed{false}, pressedThisUpdate{false};
+};
+
 class KeyPressTracker {
  public:
   std::vector<KeyEvent> update(const InputSnapshot& snapshot);
@@ -51,11 +55,15 @@ class KeyboardAdapter {
  public:
   void begin();
   void update();
+  void updateSnapshot(const InputSnapshot& snapshot);
+  const KeyboardActivity& activity() const { return activity_; }
   std::vector<KeyEvent> takePressedEvents();
 
  private:
   std::vector<KeyEvent> pending_;
   KeyPressTracker tracker_;
+  std::array<bool, 261> physical_{};
+  KeyboardActivity activity_{};
 };
 
 }  // namespace adv

@@ -46,7 +46,7 @@ void failures_and_release_retry() {
     TEST_ASSERT_TRUE(f.service.status(r.requestId).phase==WifiPhase::kReleaseFailed);
     TEST_ASSERT_EQUAL(1,f.adapter.offs);
     TEST_ASSERT_TRUE(f.service.connect().availability==WifiAvailability::kReleaseFailed);
-    f.service.tick(50000); TEST_ASSERT_EQUAL(1,f.adapter.offs);
+    f.clock.now=50000; f.service.tick(f.clock.now); TEST_ASSERT_EQUAL(2,f.adapter.offs);
     f.adapter.disconnectOk=true; f.adapter.offOk=true;
     auto state=f.service.close(r.requestId);
     TEST_ASSERT_TRUE(state.phase==WifiPhase::kOff); TEST_ASSERT_TRUE(state.outcome==WifiOutcome::kFailed);
@@ -149,4 +149,51 @@ void terminal_paths_release_ownership_without_retry() {
     TEST_ASSERT_EQUAL(2,f.adapter.offs);
   }
 }
-int main(int,char**) { UNITY_BEGIN(); RUN_TEST(configuration_and_idle); RUN_TEST(ownership_and_saved_snapshot); RUN_TEST(failures_and_release_retry); RUN_TEST(stale_ip_timeout_and_disconnect); RUN_TEST(invalid_ip_and_lost_identity); RUN_TEST(module_lifecycle_and_quiet_after_close); RUN_TEST(terminal_paths_release_ownership_without_retry); return UNITY_END(); }
+void automatic_release_budget_and_ownership() {
+  for (int failure=0;failure<4;++failure) {
+    Fixture f; const auto request=f.service.scan();
+    f.adapter.scanState=0;
+    f.adapter.stopOk=failure!=0 && failure!=3;
+    f.adapter.disconnectOk=failure!=1 && failure!=3;
+    f.adapter.offOk=failure!=2 && failure!=3;
+    f.clock.now=UINT32_MAX-500; f.service.tick(f.clock.now);
+    TEST_ASSERT_EQUAL(1,f.adapter.offs);
+    TEST_ASSERT_TRUE(f.service.status(request.requestId).releaseRetryPending);
+    for (int retry=0;retry<3;++retry) {
+      f.clock.now+=999; f.service.tick(f.clock.now); TEST_ASSERT_EQUAL(retry+1,f.adapter.offs);
+      ++f.clock.now; f.service.tick(f.clock.now); TEST_ASSERT_EQUAL(retry+2,f.adapter.offs);
+    }
+    TEST_ASSERT_FALSE(f.service.status(request.requestId).releaseRetryPending);
+    f.clock.now+=100000; f.service.tick(f.clock.now); TEST_ASSERT_EQUAL(4,f.adapter.offs);
+    TEST_ASSERT_EQUAL(4,f.adapter.stops); TEST_ASSERT_EQUAL(4,f.adapter.disconnects);
+    f.service.close(request.requestId); TEST_ASSERT_EQUAL(5,f.adapter.offs);
+    f.clock.now+=1000; f.service.tick(f.clock.now); TEST_ASSERT_EQUAL(5,f.adapter.offs);
+    f.adapter.stopOk=f.adapter.disconnectOk=f.adapter.offOk=true;
+    TEST_ASSERT_TRUE(f.service.close(request.requestId).phase==WifiPhase::kOff);
+    auto next=f.service.connect();
+    TEST_ASSERT_TRUE(f.service.close(request.requestId).expired);
+    f.clock.now+=1000; f.service.tick(f.clock.now); TEST_ASSERT_EQUAL(6,f.adapter.offs);
+    TEST_ASSERT_TRUE(f.service.status(next.requestId).phase==WifiPhase::kConnecting);
+  }
+}
+void manual_retry_delays_pending_automatic_attempt() {
+  Fixture f; auto request=f.service.connect(); f.adapter.offOk=false;
+  f.service.close(request.requestId);
+  f.clock.now=999; f.service.close(request.requestId); TEST_ASSERT_EQUAL(2,f.adapter.offs);
+  f.clock.now=1000; f.service.tick(f.clock.now); TEST_ASSERT_EQUAL(2,f.adapter.offs);
+  f.clock.now=1999; f.adapter.offOk=true; f.service.tick(f.clock.now);
+  TEST_ASSERT_EQUAL(3,f.adapter.offs); TEST_ASSERT_TRUE(f.service.status(request.requestId).phase==WifiPhase::kOff);
+  f.clock.now+=60000; f.service.tick(f.clock.now); TEST_ASSERT_EQUAL(3,f.adapter.offs);
+}
+void retry_interval_starts_after_cleanup() {
+  Fixture f; auto request=f.service.connect(); f.adapter.offOk=false;
+  f.adapter.afterOff=[&]{ f.clock.now+=200; };
+  f.service.close(request.requestId); TEST_ASSERT_EQUAL(200,f.clock.now);
+  f.clock.now=1199; f.service.tick(f.clock.now); TEST_ASSERT_EQUAL(1,f.adapter.offs);
+  f.clock.now=1200; f.service.tick(f.clock.now); TEST_ASSERT_EQUAL(2,f.adapter.offs);
+  TEST_ASSERT_EQUAL(1400,f.clock.now);
+  f.clock.now=2399; f.service.tick(f.clock.now); TEST_ASSERT_EQUAL(2,f.adapter.offs);
+  f.clock.now=100000; f.service.tick(f.clock.now); TEST_ASSERT_EQUAL(3,f.adapter.offs);
+  f.service.tick(f.clock.now); TEST_ASSERT_EQUAL(3,f.adapter.offs);
+}
+int main(int,char**) { UNITY_BEGIN(); RUN_TEST(retry_interval_starts_after_cleanup); RUN_TEST(automatic_release_budget_and_ownership); RUN_TEST(manual_retry_delays_pending_automatic_attempt); RUN_TEST(configuration_and_idle); RUN_TEST(ownership_and_saved_snapshot); RUN_TEST(failures_and_release_retry); RUN_TEST(stale_ip_timeout_and_disconnect); RUN_TEST(invalid_ip_and_lost_identity); RUN_TEST(module_lifecycle_and_quiet_after_close); RUN_TEST(terminal_paths_release_ownership_without_retry); return UNITY_END(); }

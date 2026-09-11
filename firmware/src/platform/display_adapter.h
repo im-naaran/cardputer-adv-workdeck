@@ -17,8 +17,6 @@ class DisplayAdapter {
   void setBrightness(uint8_t brightness);
   int width() const;
   int height() const;
-  int batteryLevel() const;
-  bool batteryCharging() const;
   void beginFrame(uint16_t color);
   void endFrame();
   void fillRect(int x, int y, int w, int h, uint16_t color);
@@ -31,6 +29,13 @@ class DisplayAdapter {
                 FontStyle style = FontStyle::kBody);
   std::string fitText(const std::string& text, int maxWidth, FontStyle style = FontStyle::kChinese);
   int textWidth(const std::string& text, FontStyle style = FontStyle::kBody);
+#ifdef ADV_NATIVE_TEST
+ private:
+  friend struct DisplayTestAccess;
+  unsigned frames_{0}, pushes_{0}, brightnessChanges_{0};
+  uint8_t brightness_{0};
+  unsigned pushesAtBrightness_{0};
+#endif
 };
 
 namespace color {

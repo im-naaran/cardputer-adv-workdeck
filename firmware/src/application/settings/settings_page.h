@@ -5,7 +5,7 @@
 #include "platform/display_adapter.h"
 
 namespace adv {
-enum class SettingsScreen { kHome, kBrightness, kCodex, kWifi, kScan, kViewer };
+enum class SettingsScreen { kHome, kBrightness, kCodex, kWifi, kScan, kViewer, kAutoScreenOff };
 class SettingsPage {
  public:
   SettingsPage(SettingsController& controller, DisplayAdapter& display)

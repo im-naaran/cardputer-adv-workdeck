@@ -7,7 +7,7 @@ namespace {
 bool validInterval(uint32_t value) { return value >= 1000 && value <= 0x7fffffffu; }
 bool validId(ScheduledTaskId id) {
   return id == ScheduledTaskId::kSystemTimeSync || id == ScheduledTaskId::kCodexUsageRefresh ||
-         id == ScheduledTaskId::kDisplayRefresh;
+         id == ScheduledTaskId::kDisplayRefresh || id == ScheduledTaskId::kBatterySample;
 }
 }
 ScheduledTaskService::Slot* ScheduledTaskService::find(ScheduledTaskId id) {

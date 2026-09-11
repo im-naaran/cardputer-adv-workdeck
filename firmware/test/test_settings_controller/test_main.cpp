@@ -71,4 +71,26 @@ void external_release_redraw_and_save_feedback() {
   contains(f.controller.wifiMessage(),"超时");contains(f.controller.wifiDetails(),"上次保存：保存失败");
   contains(f.controller.wifiDetails(),"测试配置未保存");
 }
-int main(int,char**) { UNITY_BEGIN(); RUN_TEST(brightness_persistence_and_retry);RUN_TEST(minutes_validation_and_legacy);RUN_TEST(wifi_drafts_save_test_and_history);RUN_TEST(wifi_scan_busy_and_release_failure);RUN_TEST(startup_errors_and_refresh_keep_drafts);RUN_TEST(external_release_redraw_and_save_feedback);return UNITY_END(); }
+void display_snapshot_preserves_failed_value() {
+  SettingsFixture f; f.boot(); f.controller.setAutoScreenOff(60);
+  f.controller.setBrightness(5);
+  TEST_ASSERT_EQUAL(60,f.displayConfig.saved().autoScreenOffSeconds);
+  f.store.failWrite=true; f.controller.setAutoScreenOff(1800);
+  TEST_ASSERT_TRUE(f.controller.displaySaveFailed());
+  TEST_ASSERT_EQUAL(1800,f.controller.autoScreenOffSeconds());
+  f.store.failWrite=false; f.controller.setBrightness(2);
+  TEST_ASSERT_EQUAL(1800,f.displayConfig.saved().autoScreenOffSeconds);
+  TEST_ASSERT_EQUAL(2,f.displayConfig.saved().brightnessLevel);
+  const int writes=f.store.writes; f.controller.saveDisplay(); TEST_ASSERT_EQUAL(writes,f.store.writes);
+  f.controller.setAutoScreenOff(1); TEST_ASSERT_EQUAL(writes,f.store.writes);
+}
+void automatic_close_feedback_updates() {
+  SettingsFixture f; f.boot(); TEST_ASSERT_TRUE(f.controller.scan());
+  f.adapter.scanState=0; f.adapter.offOk=false; f.controller.tick(0);
+  contains(f.controller.wifiMessage(),"自动重试中");
+  for(int i=1;i<=3;++i) { f.clock.now=i*1000; f.controller.tick(f.clock.now); }
+  contains(f.controller.wifiMessage(),"请重试关闭");
+  f.adapter.offOk=true; f.controller.retryClose();
+  contains(f.controller.wifiMessage(),"Wi-Fi已关闭");
+}
+int main(int,char**) { UNITY_BEGIN(); RUN_TEST(automatic_close_feedback_updates); RUN_TEST(display_snapshot_preserves_failed_value); RUN_TEST(brightness_persistence_and_retry);RUN_TEST(minutes_validation_and_legacy);RUN_TEST(wifi_drafts_save_test_and_history);RUN_TEST(wifi_scan_busy_and_release_failure);RUN_TEST(startup_errors_and_refresh_keep_drafts);RUN_TEST(external_release_redraw_and_save_feedback);return UNITY_END(); }

@@ -60,6 +60,7 @@ WifiRequest WifiService::scan() {
 WifiRequest WifiService::start(WifiOperation operation, const WifiConfig& config) {
   attempt_ = config; // A later edit/save cannot change credentials of this request.
   state_ = {};
+  releaseRetryRequestId_ = 0; releaseRetriesRemaining_ = 0;
   state_.expired = false;
   state_.requestId = ++lastId_;
   state_.operation = operation;
@@ -95,6 +96,11 @@ WifiStatus WifiService::close(uint64_t id) {
   return state_;
 }
 void WifiService::release() {
+  // A request receives one budget; neither automatic nor manual failures refill it.
+  if (releaseRetryRequestId_ != state_.requestId) {
+    releaseRetryRequestId_ = state_.requestId;
+    releaseRetriesRemaining_ = 3;
+  }
   state_.phase = WifiPhase::kReleasing;
   // Attempt all cleanup steps even if one fails. Keep ownership on error so a
   // stale close cannot interrupt a newer request and the owner can retry.
@@ -102,7 +108,12 @@ void WifiService::release() {
   const bool disconnected = adapter_.disconnectAndClearAuth();
   const bool off = adapter_.powerOff();
   state_.phase = scanStopped && disconnected && off ? WifiPhase::kOff : WifiPhase::kReleaseFailed;
-  if (state_.phase == WifiPhase::kOff) attempt_ = {};
+  // Measure the quiet interval after hardware calls, which may take time.
+  lastReleaseAttemptMs_ = clock_.nowMs();
+  state_.releaseRetryPending = state_.phase == WifiPhase::kReleaseFailed && releaseRetriesRemaining_ > 0;
+  if (state_.phase == WifiPhase::kOff) {
+    attempt_ = {}; releaseRetryRequestId_ = 0; releaseRetriesRemaining_ = 0;
+  }
 }
 void WifiService::merge(const WifiNetwork& candidate) {
   // Reuse credential text validation for SSID byte/UTF-8/control constraints.
@@ -122,6 +133,14 @@ void WifiService::merge(const WifiNetwork& candidate) {
             [](const WifiNetwork& a, const WifiNetwork& b) { return a.rssi > b.rssi; });
 }
 void WifiService::tick(uint32_t now) {
+  if (state_.phase == WifiPhase::kReleaseFailed) {
+    if (releaseRetryRequestId_ == state_.requestId && releaseRetriesRemaining_ &&
+        elapsedMs(now, lastReleaseAttemptMs_) >= 1000) {
+      --releaseRetriesRemaining_;
+      release();
+    }
+    return;
+  }
   if (state_.phase == WifiPhase::kScanning) {
     const int count = adapter_.pollScan();
     if (count >= 0) {

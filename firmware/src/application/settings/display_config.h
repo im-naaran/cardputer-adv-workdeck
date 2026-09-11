@@ -5,8 +5,13 @@
 namespace adv {
 struct DisplayConfig {
   uint8_t brightnessLevel{3};
-  bool valid() const { return brightnessLevel >= 1 && brightnessLevel <= 5; }
-  bool operator==(const DisplayConfig& other) const { return brightnessLevel == other.brightnessLevel; }
+  uint32_t autoScreenOffSeconds{600};
+  bool valid() const {
+    const auto seconds = autoScreenOffSeconds;
+    return brightnessLevel >= 1 && brightnessLevel <= 5 &&
+           (seconds == 0 || seconds == 60 || seconds == 300 || seconds == 600 || seconds == 1800);
+  }
+  bool operator==(const DisplayConfig& other) const { return brightnessLevel == other.brightnessLevel && autoScreenOffSeconds == other.autoScreenOffSeconds; }
 };
 struct DisplayConfigResult {
   ConfigStatus status{ConfigStatus::kOk};

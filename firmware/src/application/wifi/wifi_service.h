@@ -12,6 +12,7 @@ enum class WifiOutcome { kNone, kSucceeded, kFailed, kTimedOut, kDisconnected, k
 struct WifiRequest { WifiAvailability availability; uint64_t requestId{0}; };
 struct WifiStatus {
   bool expired{true};
+  bool releaseRetryPending{false};
   uint64_t requestId{0};
   WifiOperation operation{WifiOperation::kNone};
   WifiPhase phase{WifiPhase::kOff};
@@ -48,6 +49,9 @@ class WifiService {
   const MonotonicClock& clock_;
   uint64_t lastId_{0};
   uint32_t since_{0};
+  uint64_t releaseRetryRequestId_{0};
+  uint32_t lastReleaseAttemptMs_{0};
+  uint8_t releaseRetriesRemaining_{0};
   WifiStatus state_{};
   WifiConfig attempt_{};
   WifiScanResults scans_{};

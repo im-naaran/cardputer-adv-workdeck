@@ -28,8 +28,8 @@ std::string outcomeText(WifiOutcome outcome) {
 }
 void SettingsController::loadBrightness() {
   const auto result = display_.reload();
-  level_ = display_.saved().brightnessLevel;
-  brightness_(level_ * 51);
+  activeDisplay_ = display_.saved();
+  applyDisplay_(activeDisplay_);
   displayMessage_ = storageMessage(result.status);
 }
 void SettingsController::loadWifi() {
@@ -55,11 +55,24 @@ void SettingsController::refreshCodex() {
 }
 void SettingsController::setBrightness(int level) {
   if (level < 1 || level > 5) return;
-  // Apply first; a failed persistence attempt must not undo visible feedback.
-  if (level_ != level) { level_ = level; brightness_(level_ * 51); }
-  const auto result = display_.save(encodeDisplayConfig({level_}));
-  displayMessage_ = result.status == ConfigStatus::kOk ? "已保存" :
-      "当前生效，" + storageMessage(result.status);
+  if (activeDisplay_.brightnessLevel != level) {
+    activeDisplay_.brightnessLevel = level;
+    applyDisplay_(activeDisplay_);
+  }
+  saveDisplay();
+}
+void SettingsController::setAutoScreenOff(uint32_t seconds) {
+  auto next = activeDisplay_;
+  next.autoScreenOffSeconds = seconds;
+  if (!next.valid()) return;
+  if (!(next == activeDisplay_)) { activeDisplay_ = next; applyDisplay_(activeDisplay_); }
+  saveDisplay();
+}
+void SettingsController::saveDisplay() {
+  // Persist both active values, including a value whose earlier save failed.
+  const auto result = display_.save(encodeDisplayConfig(activeDisplay_));
+  displaySaveFailed_ = result.status != ConfigStatus::kOk;
+  displayMessage_ = !displaySaveFailed_ ? "已保存" : "当前生效，" + storageMessage(result.status);
 }
 bool SettingsController::saveMinutes(const std::string& text) {
   unsigned minutes = 0;
@@ -130,15 +143,19 @@ bool SettingsController::test() {
 }
 void SettingsController::retryClose() {
   if (observed_.phase != WifiPhase::kReleaseFailed || observed_.expired) return;
-  observed_ = wifi_.close(requestId_);
-  if (observed_.operation == WifiOperation::kTest) lastTest_ = observed_;
+  wifi_.close(requestId_);
+  observeWifi();
 }
 bool SettingsController::tick(uint32_t now) {
   wifi_.tick(now);
+  return observeWifi();
+}
+bool SettingsController::observeWifi() {
   const auto next = wifi_.status(requestId_);
   const auto availability = wifi_.canConnect();
   const bool changed = availability != availability_ || next.phase != observed_.phase || next.outcome != observed_.outcome ||
-      next.expired != observed_.expired || next.ip != observed_.ip;
+      next.expired != observed_.expired || next.ip != observed_.ip ||
+      next.releaseRetryPending != observed_.releaseRetryPending;
   availability_ = availability;
   observed_ = next;
   if (!next.expired && next.operation == WifiOperation::kTest) lastTest_ = next;
@@ -147,7 +164,8 @@ bool SettingsController::tick(uint32_t now) {
   if (changed && !next.expired && next.outcome != WifiOutcome::kNone) {
     wifiMessage_ = next.operation == WifiOperation::kScan ? "扫描" : "测试";
     wifiMessage_ += outcomeText(next.outcome);
-    wifiMessage_ += next.phase == WifiPhase::kOff ? "，Wi-Fi已关闭" : "，Wi-Fi关闭失败";
+    wifiMessage_ += next.phase == WifiPhase::kOff ? "，Wi-Fi已关闭" :
+        next.releaseRetryPending ? "，关闭失败，自动重试中" : "，Wi-Fi关闭失败，请重试关闭";
   }
   return changed;
 }
@@ -181,7 +199,8 @@ std::string SettingsController::wifiDetails() const {
     text += "\n上次测试：" + outcomeText(lastTest_.outcome);
     if (!lastTest_.ip.empty()) text += "\n上次测试IP：" + lastTest_.ip;
     if (lastTest_.phase == WifiPhase::kOff) text += "\n测试已结束，Wi-Fi已关闭";
-    if (lastTest_.phase == WifiPhase::kReleaseFailed) text += "\nWi-Fi关闭失败，请重试关闭";
+    if (lastTest_.phase == WifiPhase::kReleaseFailed)
+      text += lastTest_.releaseRetryPending ? "\n关闭失败，自动重试中" : "\nWi-Fi关闭失败，请重试关闭";
     if (!(draft_ == tested_)) text += "\n配置已修改，需重新测试";
     if (!savedValid_ || !(tested_ == saved_)) text += "\n测试配置未保存";
   }

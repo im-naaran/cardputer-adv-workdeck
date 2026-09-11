@@ -104,10 +104,30 @@ void test_automatic_label_in_all_states() {
   auto loaded=loadedState();
   TEST_ASSERT_EQUAL_STRING("自动已关",page.makeView(loaded,100,{false,300000}).automaticLabel.c_str());
 }
+void test_visible_time_refresh() {
+  auto state = loadedState(); adv::CodexPage page; adv::DisplayAdapter display;
+  const adv::ScheduledTaskSnapshot task{false,300000};
+  TEST_ASSERT_TRUE(page.timeChanged(state,100,task));
+  page.render(display,state,100,task);
+  TEST_ASSERT_FALSE(page.timeChanged(state,101,task));
+  TEST_ASSERT_TRUE(page.timeChanged(state,60100,task));
+  page.render(display,state,60100,task);
+  TEST_ASSERT_FALSE(page.timeChanged(state,60100,task));
+  page.invalidateTimeSnapshot(); TEST_ASSERT_TRUE(page.timeChanged(state,60100,task));
+  // Only the third, off-screen reset changes while the footer shows refresh-in-progress.
+  auto message=response("next"); message.windows[0].hasResetEpoch=false;
+  message.windows[2].resetsAtEpochSeconds=1120;
+  state.beginRequest("next"); state.applyResponse(message,100);
+  state.beginRequest("pending"); page.render(display,state,100,task);
+  TEST_ASSERT_FALSE(page.timeChanged(state,60100,task));
+  page.scroll(1,state.windows().size()); page.render(display,state,100,task);
+  TEST_ASSERT_TRUE(page.timeChanged(state,60100,task));
+}
 }  // namespace
 
 int main(int, char**) {
   UNITY_BEGIN();
+  RUN_TEST(test_visible_time_refresh);
   RUN_TEST(test_converts_used_to_remaining_and_formats_missing_fields);
   RUN_TEST(test_unsupported_dynamic_name_falls_back);
   RUN_TEST(test_long_dynamic_name_is_utf8_safely_truncated);

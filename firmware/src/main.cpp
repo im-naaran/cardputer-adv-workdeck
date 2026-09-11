@@ -4,6 +4,8 @@
 #endif
 
 #include "application/app_shell.h"
+#include "application/power/battery_service.h"
+#include "application/power/screen_power_controller.h"
 #include "application/codex/codex_controller.h"
 #include "application/codex/codex_page.h"
 #include "application/codex/codex_config_commands.h"
@@ -23,6 +25,17 @@
 
 namespace {
 adv::DisplayAdapter display;
+adv::ScreenPowerController screenPower;
+bool backlightOn = true;
+uint8_t userBrightness = 153;
+void applyDisplayConfig(const adv::DisplayConfig& config) {
+  screenPower.setTimeout(config.autoScreenOffSeconds);
+  userBrightness = config.brightnessLevel * 51;
+  // Applying a saved value must not light an off-screen or pending wake frame.
+  if (backlightOn && screenPower.visible()) display.setBrightness(userBrightness);
+}
+adv::PlatformBatteryAdapter batteryAdapter;
+adv::BatteryService battery([] { return batteryAdapter.read(); });
 adv::KeyboardAdapter keyboard;
 adv::MonotonicClock clockSource;
 adv::BleTransport ble;
@@ -59,7 +72,7 @@ adv::WifiConfigService wifiConfig(configStore);
 adv::PlatformWifiAdapter wifiAdapter;
 adv::WifiService wifi(wifiConfig, wifiAdapter, clockSource);
 adv::SettingsController settings(displayConfig, codexConfig, codex, wifiConfig, wifi,
-                                 [](uint8_t value) { display.setBrightness(value); });
+                                 applyDisplayConfig);
 adv::SettingsPage settingsPage(settings, display);
 
 
@@ -83,6 +96,7 @@ adv::ConfigCommandDispatcher configCommands(
 bool redrawRequested = true;
 
 void clearModuleSession() {
+  codexPage.invalidateTimeSnapshot();
   codex.disconnect();
   timeSync.disconnect();
   actions.disconnect();
@@ -125,6 +139,7 @@ void handleKey(const adv::KeyEvent& event, uint32_t now) {
   if (routed.action == adv::InputAction::kNavigation) {
     navigation.handleGlobal(routed.event);
     if (navigation.current() != previous) {
+      codexPage.invalidateTimeSnapshot();
       if (previous == adv::Module::kSettings) settingsPage.leave();
       codex.onPageChanged(navigation.current() == adv::Module::kCodex);
       enterActionPage(now);
@@ -165,13 +180,17 @@ void handleKey(const adv::KeyEvent& event, uint32_t now) {
 
 void handleKeyboard(uint32_t now) {
   keyboard.update();
-  for (const auto& event : keyboard.takePressedEvents()) handleKey(event, now);
+  const bool wasVisible = screenPower.visible();
+  const bool allowInput = screenPower.onKeyboard(keyboard.activity(), now);
+  const auto events = keyboard.takePressedEvents();  // Always drain suppressed wake events.
+  if (!wasVisible && screenPower.visible()) redrawRequested = true;
+  if (allowInput) for (const auto& event : events) handleKey(event, now);
 }
 
 void draw(uint32_t now) {
-  if (!redrawRequested) return;
+  if (!screenPower.visible() || !redrawRequested) return;
   redrawRequested = false;
-  shell.beginFrame(display, navigation.current(), display.batteryLevel());
+  shell.beginFrame(display, navigation.current(), battery.snapshot());
   if (navigation.current() == adv::Module::kSettings) settingsPage.render();
   else if (!session.ready()) shell.renderDisconnected(display);
   else if (navigation.current() == adv::Module::kCodex) {
@@ -181,6 +200,8 @@ void draw(uint32_t now) {
   else if (navigation.current() == adv::Module::kClipboard) clipboardPage.render(display, actions.state(adv::ActionType::kClipboard));
   shell.renderFeedback(display, actions.execution().feedback);
   shell.endFrame(display);
+  // Restore light only after the latest frame; never expose the stale off-screen frame.
+  if (!backlightOn) { display.setBrightness(userBrightness); backlightOn = true; }
 }
 }
 
@@ -192,11 +213,18 @@ void setup() {
   keyboard.begin();
   ble.begin();
   const uint32_t now = clockSource.nowMs();
+  screenPower.begin(now);
   timeSync.begin(now);
   codex.begin(now);
+  // Registration owns the startup sample; keys and drawing never sample.
+  scheduler.registerTask({adv::ScheduledTaskId::kBatterySample, 60000, true, true},
+                        [](uint32_t) { if (battery.sample()) redrawRequested = true; }, now);
   // Long-lived display cadence belongs to the scheduler; drawing stays in loop().
   scheduler.registerTask({adv::ScheduledTaskId::kDisplayRefresh, 60000, true, false},
-                        [](uint32_t) { redrawRequested = true; }, now);
+                        [](uint32_t tickNow) {
+                          if (screenPower.visible() && session.ready() && navigation.current() == adv::Module::kCodex &&
+                              codexPage.timeChanged(codex.state(), tickNow, codex.taskState())) redrawRequested = true;
+                        }, now);
   const auto configResult = codexConfig.reload();
   Serial.printf("config startup=%s activeIntervalSeconds=%lu\n",
                 adv::configStatusName(configResult.status),
@@ -278,6 +306,10 @@ void loop() {
   ble.pollTransmit(clockSource.nowMs());
   if (codex.state().inFlight() != wasInFlight) redrawRequested = true;
   now = clockSource.nowMs();
+  screenPower.tick(now);
+  if (!screenPower.visible() && backlightOn) {
+    display.setBrightness(0); backlightOn = false;
+  }
   draw(now);
   delay(10);
 }
