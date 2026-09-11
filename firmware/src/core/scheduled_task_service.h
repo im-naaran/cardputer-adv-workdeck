@@ -2,6 +2,7 @@
 #include <array>
 #include <cstdint>
 #include <functional>
+#include <optional>
 
 namespace adv {
 enum class ScheduledTaskId { kSystemTimeSync, kCodexUsageRefresh, kDisplayRefresh, kBatterySample };
@@ -22,6 +23,9 @@ class ScheduledTaskService {
   bool triggerNow(ScheduledTaskId, uint32_t);
   bool rescheduleFromNow(ScheduledTaskId, uint32_t);
   bool cancel(ScheduledTaskId);
+  // No enabled tasks => nullopt; any due task => 0. Like tick(), unsigned elapsed
+  // time handles wraparound. Querying never dispatches or resets a task.
+  std::optional<uint32_t> nextWaitMs(uint32_t nowMs) const;
   void tick(uint32_t);
  private:
   friend struct ScheduledTaskTestAccess;

@@ -45,6 +45,27 @@ void invalid_and_full() {
   ScheduledTaskTestAccess::fill(s);
   TEST_ASSERT_FALSE(s.registerTask({B,1000,true,false},[](uint32_t){},0));
 }
+void next_deadline_is_read_only_and_wrap_safe() {
+  ScheduledTaskService s;
+  TEST_ASSERT_FALSE(s.nextWaitMs(0).has_value());
+  s.registerTask({A,1000,true,false},[](uint32_t){},0xffffff00u);
+  s.registerTask({B,3000,true,false},[](uint32_t){},0xffffff00u);
+  auto wait = s.nextWaitMs(0x00000000u);
+  TEST_ASSERT_TRUE(wait.has_value());
+  TEST_ASSERT_EQUAL(744, *wait);
+  const auto before = *wait;
+  TEST_ASSERT_EQUAL(before, *s.nextWaitMs(0));
+  s.setEnabled(A,false,0);
+  TEST_ASSERT_EQUAL(2744, *s.nextWaitMs(0));
+  s.updateInterval(B,2000,0);
+  TEST_ASSERT_EQUAL(2000, *s.nextWaitMs(0));
+  TEST_ASSERT_EQUAL(1, *s.nextWaitMs(1999));
+  TEST_ASSERT_EQUAL(0, *s.nextWaitMs(2000));
+  s.tick(2000);
+  TEST_ASSERT_EQUAL(2000, *s.nextWaitMs(2000));
+  s.cancel(B);
+  TEST_ASSERT_FALSE(s.nextWaitMs(2000).has_value());
+}
 void immediate_order_and_callback_updates() {
   ScheduledTaskService s; std::vector<int> calls;
   TEST_ASSERT_TRUE(s.registerTask({A,1000,true,true},[&](uint32_t){calls.push_back(1);},0));
@@ -67,4 +88,4 @@ void immediate_order_and_callback_updates() {
   TEST_ASSERT_FALSE(s.getTask(ScheduledTaskId::kDisplayRefresh,unchanged));
   TEST_ASSERT_EQUAL(123,unchanged.intervalMs);
 }
-int main(int,char**) { UNITY_BEGIN(); RUN_TEST(lifecycle); RUN_TEST(mutation_and_wrap); RUN_TEST(invalid_and_full); RUN_TEST(immediate_order_and_callback_updates); return UNITY_END(); }
+int main(int,char**) { UNITY_BEGIN(); RUN_TEST(lifecycle); RUN_TEST(mutation_and_wrap); RUN_TEST(invalid_and_full); RUN_TEST(next_deadline_is_read_only_and_wrap_safe); RUN_TEST(immediate_order_and_callback_updates); return UNITY_END(); }

@@ -1,6 +1,7 @@
 #pragma once
 #include <functional>
 #include "application/settings/display_config.h"
+#include "application/settings/power_config.h"
 #include "application/codex/codex_controller.h"
 #include "application/wifi/wifi_service.h"
 
@@ -9,9 +10,17 @@ class SettingsController {
  public:
   SettingsController(DisplayConfigService& display, CodexConfigService& config,
                      CodexController& codex, WifiConfigService& wifiConfig,
-                     WifiService& wifi, std::function<void(const DisplayConfig&)> applyDisplay)
+                     WifiService& wifi, PowerConfigService& power,
+                     std::function<void(const DisplayConfig&)> applyDisplay)
       : display_(display), config_(config), codex_(codex), wifiConfig_(wifiConfig),
-        wifi_(wifi), applyDisplay_(std::move(applyDisplay)) {}
+        wifi_(wifi), power_(power), applyDisplay_(std::move(applyDisplay)) {}
+  void loadPower();
+  void setCpuFrequency(uint32_t mhz);
+  void savePower();
+  uint32_t cpuFrequencyMhz() const { return power_.frequencyMhz(); }
+  uint32_t selectedCpuFrequencyMhz() const { return selectedCpuFrequency_; }
+  bool powerSaveFailed() const { return powerSaveFailed_; }
+  const std::string& powerMessage() const { return powerMessage_; }
   void loadBrightness();
   void loadWifi();
   void refreshCodex();
@@ -44,14 +53,19 @@ class SettingsController {
   bool accept(WifiRequest request);
   bool observeWifi();
   bool validateWifi();
+  void observePower(const PowerConfigResult& result, bool loading = false);
   DisplayConfigService& display_;
   CodexConfigService& config_;
   CodexController& codex_;
   WifiConfigService& wifiConfig_;
   WifiService& wifi_;
+  PowerConfigService& power_;
   std::function<void(const DisplayConfig&)> applyDisplay_;
   DisplayConfig activeDisplay_{};
   bool displaySaveFailed_{false};
+  uint32_t selectedCpuFrequency_{160};
+  bool powerSaveFailed_{false};
+  std::string powerMessage_;
   ConfigResult savedCodex_{};
   WifiConfig draft_{}, saved_{}, tested_{};
   bool savedValid_{false}, haveTest_{false};

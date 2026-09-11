@@ -78,6 +78,16 @@ bool ScheduledTaskService::cancel(ScheduledTaskId id) {
   *s = Slot{};
   return true;
 }
+std::optional<uint32_t> ScheduledTaskService::nextWaitMs(uint32_t now) const {
+  std::optional<uint32_t> nearest;
+  for (const auto& s : slots_) {
+    if (!s.occupied || !s.config.enabled) continue;
+    const uint32_t elapsed = elapsedMs(now, s.since);
+    const uint32_t wait = elapsed >= s.config.intervalMs ? 0 : s.config.intervalMs - elapsed;
+    if (!nearest || wait < *nearest) nearest = wait;
+  }
+  return nearest;
+}
 void ScheduledTaskService::tick(uint32_t now) {
   if (dispatching_) return;
   struct Entry { ScheduledTaskId id; uint64_t generation; };

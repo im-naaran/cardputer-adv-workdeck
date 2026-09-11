@@ -26,6 +26,30 @@ std::string outcomeText(WifiOutcome outcome) {
   }
 }
 }
+void SettingsController::observePower(const PowerConfigResult& result, bool loading) {
+  powerSaveFailed_ = result.status != ConfigStatus::kOk && !(loading && result.status == ConfigStatus::kNotFound);
+  if (result.powerStatus == PowerStatus::kRestoreFailed) powerMessage_ = "改频恢复失败";
+  else if (result.powerStatus == PowerStatus::kUnsupported) powerMessage_ = "当前不支持改频";
+  else if (result.status == ConfigStatus::kApplyFailed) powerMessage_ = "应用失败，未保存";
+  else if (result.status == ConfigStatus::kReloadFailed) powerMessage_ = "保存结果未确认";
+  else if (loading && result.status == ConfigStatus::kOk) powerMessage_.clear();
+  else powerMessage_ = storageMessage(result.status);
+}
+void SettingsController::loadPower() {
+  const auto result = power_.load();
+  selectedCpuFrequency_ = result.config.cpuFrequencyMhz;
+  observePower(result, true);
+}
+void SettingsController::setCpuFrequency(uint32_t mhz) {
+  if (!validCpuFrequency(mhz)) return;
+  // Keep the requested value separate from hardware readback. Enter must retry
+  // this target even when the setter restored the previous frequency.
+  selectedCpuFrequency_ = mhz;
+  savePower();
+}
+void SettingsController::savePower() {
+  observePower(power_.save(encodePowerConfig({selectedCpuFrequency_})));
+}
 void SettingsController::loadBrightness() {
   const auto result = display_.reload();
   activeDisplay_ = display_.saved();

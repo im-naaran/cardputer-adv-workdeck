@@ -85,6 +85,41 @@ void screen_timeout_page_and_retry() {
   f.store.failWrite=false; f.key(Key::kEnter); TEST_ASSERT_FALSE(f.controller.displaySaveFailed());
   TEST_ASSERT_EQUAL(60,f.displayConfig.saved().autoScreenOffSeconds);
   f.key(Key::kBackspace); TEST_ASSERT_EQUAL(3,f.page.focus()); f.page.render();
+  f.key(Key::kTab); TEST_ASSERT_EQUAL(4,f.page.focus());
   f.key(Key::kTab); TEST_ASSERT_EQUAL(0,f.page.focus());
 }
-int main(int,char**) { UNITY_BEGIN();RUN_TEST(screen_timeout_page_and_retry);RUN_TEST(tab_navigation_brightness_and_minutes);RUN_TEST(legacy_seconds_no_implicit_save);RUN_TEST(text_symbols_utf8_limits_and_page_preservation);RUN_TEST(network_info_and_scan_selection);RUN_TEST(autosave_coalesces_and_retries_after_failure);RUN_TEST(bounds_and_network_retry);return UNITY_END(); }
+void cpu_page_offline_retry_and_navigation() {
+  SettingsFixture f; f.boot();
+  for(int i=0;i<4;++i) f.key(Key::kTab);
+  TEST_ASSERT_EQUAL(4,f.page.focus()); f.page.render();
+  f.key(Key::kEnter); TEST_ASSERT_TRUE(f.page.screen()==SettingsScreen::kCpuFrequency);
+  TEST_ASSERT_EQUAL(160,f.controller.cpuFrequencyMhz());
+  f.power.fail=true; f.key(Key::kRight);
+  TEST_ASSERT_EQUAL(160,f.controller.cpuFrequencyMhz());
+  TEST_ASSERT_EQUAL(240,f.controller.selectedCpuFrequencyMhz());
+  TEST_ASSERT_TRUE(f.controller.powerSaveFailed()); TEST_ASSERT_EQUAL(0,f.store.writes);
+  f.page.tick(10000); f.page.render();
+  contains(f.controller.powerMessage(),"应用失败");
+  f.key(Key::kBackspace); TEST_ASSERT_EQUAL(4,f.page.focus());
+  f.key(Key::kEnter); TEST_ASSERT_TRUE(f.controller.powerSaveFailed());
+  f.power.fail=false; f.key(Key::kEnter);
+  TEST_ASSERT_EQUAL(240,f.controller.cpuFrequencyMhz());
+  TEST_ASSERT_FALSE(f.controller.powerSaveFailed());
+  f.store.failWrite=true; f.key(Key::kTab);
+  TEST_ASSERT_EQUAL(80,f.controller.cpuFrequencyMhz());
+  TEST_ASSERT_TRUE(f.controller.powerSaveFailed());
+  f.page.tick(15000); f.page.render();
+  f.store.failWrite=false; f.key(Key::kEnter);
+  TEST_ASSERT_EQUAL(80,parsePowerConfig(f.store.files["/config/power.json"]).config.cpuFrequencyMhz);
+  const auto writes=f.store.writes;
+  f.key(Key::kEnter); f.key(Key::kLeft); TEST_ASSERT_EQUAL(writes,f.store.writes);
+  f.key(Key::kTab); TEST_ASSERT_EQUAL(160,f.controller.cpuFrequencyMhz());
+  // A different selection replaces a failed pending target, including when the
+  // replacement is already the actual clock and needs no hardware call.
+  f.power.fail=true; f.key(Key::kRight); f.key(Key::kLeft);
+  TEST_ASSERT_EQUAL(160,f.controller.selectedCpuFrequencyMhz());
+  TEST_ASSERT_FALSE(f.controller.powerSaveFailed());
+  f.key(Key::kBackspace); f.key(Key::kTab); TEST_ASSERT_EQUAL(0,f.page.focus());
+  TEST_ASSERT_EQUAL(0,f.adapter.connects); TEST_ASSERT_EQUAL(0,f.adapter.scans);
+}
+int main(int,char**) { UNITY_BEGIN();RUN_TEST(cpu_page_offline_retry_and_navigation);RUN_TEST(screen_timeout_page_and_retry);RUN_TEST(tab_navigation_brightness_and_minutes);RUN_TEST(legacy_seconds_no_implicit_save);RUN_TEST(text_symbols_utf8_limits_and_page_preservation);RUN_TEST(network_info_and_scan_selection);RUN_TEST(autosave_coalesces_and_retries_after_failure);RUN_TEST(bounds_and_network_retry);return UNITY_END(); }

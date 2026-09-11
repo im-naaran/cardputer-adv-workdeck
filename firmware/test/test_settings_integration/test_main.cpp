@@ -17,6 +17,9 @@
 #include "platform/keyboard_adapter.h"
 #include "platform/monotonic_clock.h"
 namespace adv {
+using FakePower = ::FakePower;
+void checkBootFrequency();
+struct SettingsIntegrationBle : BleTransport { void begin() { checkBootFrequency(); BleTransport::begin(); } };
 struct SettingsIntegrationStore : ::SettingsStore { bool begin() { return true; } };
 struct SettingsIntegrationClock : ::Clock {};
 struct SettingsIntegrationWifi : ::Adapter {};
@@ -31,20 +34,29 @@ struct TestSerial {
 void delay(int) {}
 // Compile the actual setup, input dispatch, connection handling and loop against
 // fakes. No duplicate test loop can silently drift away from production ordering.
+#define BleTransport SettingsIntegrationBle
+#define PlatformPowerAdapter FakePower
 #define ADV_SETTINGS_INTEGRATION_TEST
 #define PlatformConfigFileStore SettingsIntegrationStore
 #define MonotonicClock SettingsIntegrationClock
 #define PlatformWifiAdapter SettingsIntegrationWifi
 #include "../../src/main.cpp"
+#undef BleTransport
+#undef PlatformPowerAdapter
 #undef PlatformConfigFileStore
 #undef MonotonicClock
 #undef PlatformWifiAdapter
 
+namespace adv {
+void checkBootFrequency() { TEST_ASSERT_EQUAL(80,powerAdapter.actual); TEST_ASSERT_EQUAL(0,configStore.writes); }
+}
 void actual_main_offline_lifecycle() {
+  configStore.files["/config/power.json"] = encodePowerConfig({80});
   configStore.files["/config/display.json"] = encodeDisplayConfig({2});
   configStore.files["/config/codex.json"] = encodeCodexConfig({90});
   configStore.files["/config/wifi.json"] = encodeWifiConfig({"saved","","password"});
   setup();
+  TEST_ASSERT_EQUAL(80,settings.cpuFrequencyMhz());
   TEST_ASSERT_EQUAL(2,settings.brightnessLevel());TEST_ASSERT_EQUAL(90,settings.intervalSeconds());
   TEST_ASSERT_EQUAL_STRING("saved",settings.draft().ssid.c_str());
   TEST_ASSERT_EQUAL(0,wifiAdapter.connects);TEST_ASSERT_EQUAL(0,wifiAdapter.scans);TEST_ASSERT_EQUAL(0,wifiAdapter.offs);
@@ -117,6 +129,20 @@ void actual_main_offline_lifecycle() {
   clockSource.now+=600;loop();TEST_ASSERT_EQUAL(180,settings.intervalSeconds());
 
 }
+void actual_main_cpu_offline_input() {
+  ble.onDisconnected(); ble.poll(clockSource.now); handleConnection();
+  handleKey({Key::kDigit4,true},clockSource.now);
+  handleKey({Key::kBackspace},clockSource.now);
+  for(int i=0;i<5;++i) handleKey({Key::kDown},clockSource.now);
+  handleKey({Key::kEnter},clockSource.now);
+  TEST_ASSERT_TRUE(settingsPage.screen()==SettingsScreen::kCpuFrequency);
+  handleKey({Key::kTab},clockSource.now);
+  TEST_ASSERT_EQUAL(160,powerAdapter.actual);
+  TEST_ASSERT_EQUAL(160,parsePowerConfig(configStore.files["/config/power.json"]).config.cpuFrequencyMhz);
+  handleKey({Key::kDigit1,true},clockSource.now); handleKey({Key::kDigit4,true},clockSource.now);
+  TEST_ASSERT_TRUE(settingsPage.screen()==SettingsScreen::kCpuFrequency);
+  TEST_ASSERT_FALSE(session.ready());
+}
 void actual_main_action_pages_and_session() {
   // Exercise production hello/navigation dispatch, including entering before hello.
   ble.onDisconnected();handleConnection();
@@ -170,4 +196,4 @@ void actual_main_action_pages_and_session() {
   TEST_ASSERT_FALSE(actions.onMessage(page,clockSource.now));
   ble.onDisconnected();handleConnection();
 }
-int main(int,char**) { UNITY_BEGIN();RUN_TEST(actual_main_offline_lifecycle);RUN_TEST(actual_main_action_pages_and_session);return UNITY_END(); }
+int main(int,char**) { UNITY_BEGIN();RUN_TEST(actual_main_offline_lifecycle);RUN_TEST(actual_main_action_pages_and_session);RUN_TEST(actual_main_cpu_offline_input);return UNITY_END(); }

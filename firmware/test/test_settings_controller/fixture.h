@@ -1,5 +1,6 @@
 #pragma once
 #include <map>
+#include "../test_power_adapter/fixture.h"
 #include "../test_wifi_service/fixture.h"
 #include "application/settings/settings_page.h"
 struct SettingsStore : ConfigFileStore {
@@ -28,11 +29,12 @@ struct SettingsFixture {
   CodexConfigService codexConfig{store,codex,[&]{return clock.now;}};
   DisplayConfigService displayConfig{store}; WifiConfigService wifiConfig{store};
   WifiService wifi{wifiConfig,adapter,clock};
+  FakePower power; PowerConfigService powerConfig{store,power};
   int brightness{0}, applies{0};
-  SettingsController controller{displayConfig,codexConfig,codex,wifiConfig,wifi,[&](const DisplayConfig& value){brightness=value.brightnessLevel*51;++applies;}};
+  SettingsController controller{displayConfig,codexConfig,codex,wifiConfig,wifi,powerConfig,[&](const DisplayConfig& value){brightness=value.brightnessLevel*51;++applies;}};
   DisplayAdapter display; SettingsPage page{controller,display}; InputRouter router;
   SettingsFixture() { codex.begin(0); }
-  void boot() { controller.loadBrightness(); codexConfig.reload(); controller.refreshCodex(); controller.loadWifi(); }
+  void boot() { controller.loadPower(); controller.loadBrightness(); codexConfig.reload(); controller.refreshCodex(); controller.loadWifi(); }
   void key(Key key) { page.handle(Module::kSettings,router.route({key},Module::kSettings,page.textEditing(Module::kSettings))); }
   void type(const std::string& text) {
     for (char c:text) { KeyEvent event{Key::kCharacter}; event.character=c;event.text=c;

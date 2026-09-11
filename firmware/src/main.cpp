@@ -68,10 +68,12 @@ adv::PlatformConfigFileStore configStore;
 adv::InputConfigService inputConfig(configStore, inputRouter);
 adv::CodexConfigService codexConfig(configStore, codex, [] { return clockSource.nowMs(); });
 adv::DisplayConfigService displayConfig(configStore);
+adv::PlatformPowerAdapter powerAdapter;
+adv::PowerConfigService powerConfig(configStore, powerAdapter);
 adv::WifiConfigService wifiConfig(configStore);
 adv::PlatformWifiAdapter wifiAdapter;
 adv::WifiService wifi(wifiConfig, wifiAdapter, clockSource);
-adv::SettingsController settings(displayConfig, codexConfig, codex, wifiConfig, wifi,
+adv::SettingsController settings(displayConfig, codexConfig, codex, wifiConfig, wifi, powerConfig,
                                  applyDisplayConfig);
 adv::SettingsPage settingsPage(settings, display);
 
@@ -209,6 +211,10 @@ void setup() {
   Serial.begin(115200);
   display.begin();
   configStore.begin();
+  // Apply persisted CPU frequency before starting either wireless service.
+  settings.loadPower();
+  Serial.printf("power cpu_mhz=%lu error=%d automatic_sleep=unsupported\n",
+                static_cast<unsigned long>(settings.cpuFrequencyMhz()), settings.powerSaveFailed());
   settings.loadBrightness();
   keyboard.begin();
   ble.begin();

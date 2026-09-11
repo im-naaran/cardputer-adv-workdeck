@@ -19,6 +19,7 @@
 #include "application/power/battery_service.h"
 #include "application/power/screen_power_controller.h"
 namespace adv {
+using FakePower = ::FakePower;
 struct DisplayTestAccess {
   static unsigned brightnessChanges(const DisplayAdapter& d) { return d.brightnessChanges_; }
   static unsigned frames(const DisplayAdapter& d) { return d.frames_; }
@@ -50,11 +51,13 @@ void delay(int) {}
 // fakes. No duplicate test loop can silently drift away from production ordering.
 #define KeyboardAdapter PowerKeyboard
 #define PlatformBatteryAdapter PowerBattery
+#define PlatformPowerAdapter FakePower
 #define ADV_SETTINGS_INTEGRATION_TEST
 #define PlatformConfigFileStore SettingsIntegrationStore
 #define MonotonicClock SettingsIntegrationClock
 #define PlatformWifiAdapter SettingsIntegrationWifi
 #include "../../src/main.cpp"
+#undef PlatformPowerAdapter
 #undef PlatformConfigFileStore
 #undef MonotonicClock
 #undef PlatformWifiAdapter

@@ -100,6 +100,18 @@ bool SettingsPage::handle(Module module, const RoutedInput& input, uint32_t now)
     return true;
   }
   if (key == Key::kBackspace) { back(); return true; }
+  if (screen_ == SettingsScreen::kCpuFrequency) {
+    const auto selected = controller_.selectedCpuFrequencyMhz();
+    auto next = selected;
+    if ((key == Key::kLeft || key == Key::kUp) && next > 80) next -= 80;
+    if ((key == Key::kRight || key == Key::kDown) && next < 240) next += 80;
+    if (key == Key::kTab) next = next == 240 ? 80 : next + 80;
+    if (next != selected) { controller_.setCpuFrequency(next); feedback(controller_.powerMessage()); }
+    else if (key == Key::kEnter && controller_.powerSaveFailed()) {
+      controller_.savePower(); feedback(controller_.powerMessage());
+    }
+    return true;
+  }
   if (screen_ == SettingsScreen::kBrightness) {
     const int level = controller_.brightnessLevel();
     int next = level;
@@ -148,7 +160,10 @@ bool SettingsPage::handle(Module module, const RoutedInput& input, uint32_t now)
   feedback_.clear();
   if (screen_ == SettingsScreen::kHome) {
     homeFocus_ = focus_;
-    enter(focus_ == 0 ? SettingsScreen::kBrightness : focus_ == 1 ? SettingsScreen::kWifi : focus_ == 2 ? SettingsScreen::kCodex : SettingsScreen::kAutoScreenOff);
+    constexpr SettingsScreen screens[] = {
+        SettingsScreen::kBrightness, SettingsScreen::kWifi, SettingsScreen::kCodex,
+        SettingsScreen::kAutoScreenOff, SettingsScreen::kCpuFrequency};
+    enter(screens[focus_]);
   } else if (screen_ == SettingsScreen::kWifi) {
     if (focus_ < 3) edit(focus_);
     else if (focus_ == 3) { if (controller_.scan()) enter(SettingsScreen::kScan); else feedback(controller_.wifiMessage()); }
@@ -168,7 +183,8 @@ std::vector<std::string> SettingsPage::rows() const {
   switch (screen_) {
     case SettingsScreen::kHome: return {"屏幕亮度 " + std::to_string(controller_.brightnessLevel()*20) + "%",
         "Wi-Fi " + controller_.wifiSummary(), "Codex自动刷新 " + (minutesDirty_ ? minutes_ + "分钟 未保存" : intervalText(controller_.intervalSeconds())),
-        "自动息屏 " + screenTimeoutText(controller_.autoScreenOffSeconds())};
+        "自动息屏 " + screenTimeoutText(controller_.autoScreenOffSeconds()),
+        "CPU频率 " + std::to_string(controller_.cpuFrequencyMhz()) + " MHz"};
     case SettingsScreen::kWifi: return {"SSID：" + controller_.draft().ssid, "用户名：" + controller_.draft().username,
         "密码：" + controller_.draft().password, "扫描网络", "保存", "测试连接", "查看网络信息"};
     case SettingsScreen::kScan: {
@@ -224,6 +240,15 @@ void SettingsPage::render() {
     const auto text = controller_.displaySaveFailed() ? controller_.displayMessage() : feedback_;
     if (!text.empty()) draw(text, 78, controller_.displaySaveFailed() ? color::kRed : color::kMuted);
     if (controller_.displaySaveFailed()) draw("Enter重试保存", 100, color::kMuted);
+    return;
+  }
+  if (screen_ == SettingsScreen::kCpuFrequency) {
+    draw("CPU频率", 25, color::kAccent);
+    draw("< " + std::to_string(controller_.cpuFrequencyMhz()) + " MHz >", 47);
+    const auto message = controller_.powerSaveFailed() ? controller_.powerMessage() : feedback_;
+    if (!message.empty()) draw(message, 70, controller_.powerSaveFailed() ? color::kRed : color::kMuted);
+    if (controller_.powerSaveFailed())
+      draw("Enter重试 " + std::to_string(controller_.selectedCpuFrequencyMhz()) + " MHz", 93, color::kMuted);
     return;
   }
   if (screen_ == SettingsScreen::kCodex) {
