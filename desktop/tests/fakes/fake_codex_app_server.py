@@ -40,6 +40,9 @@ class FakeProcess:
         self.terminated = True
         self.returncode = 0
 
+    def kill(self) -> None:
+        self.returncode = -9
+
     async def wait(self) -> int:
         return self.returncode or 0
 

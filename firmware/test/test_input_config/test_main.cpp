@@ -52,6 +52,16 @@ void parsing_and_persistence() {
   const int writes=store.writes; store.readStatus=ConfigStatus::kNotMounted;
   service.save("{}"); TEST_ASSERT_EQUAL(writes,store.writes); TEST_ASSERT_FALSE(router.config().directionMapping[1]);
 }
+void nul_keys_are_rejected_without_saving() {
+  Store store; InputRouter router; InputConfigService service(store,router);
+  for (const auto* json : {
+      R"({"scripts\u0000ignored":{"directionMapping":false}})",
+      R"({"scripts":{"directionMapping\u0000ignored":false}})"}) {
+    TEST_ASSERT_EQUAL_INT((int)ConfigStatus::kInvalidConfig, (int)service.save(json).status);
+    TEST_ASSERT_EQUAL(0, store.writes);
+    TEST_ASSERT_TRUE(router.config().directionMapping[1]);
+  }
+}
 void shared_serial_dispatch() {
   Store store; InputRouter router; InputConfigService service(store,router);
   ScheduledTaskService scheduler; ExecIdGenerator ids;
@@ -77,4 +87,4 @@ void shared_serial_dispatch() {
   TEST_ASSERT_EQUAL_STRING("config error=LineTooLong",out.back().c_str());TEST_ASSERT_EQUAL(writes,store.writes);
   bytes+="input.config.save {}\n";TEST_ASSERT_TRUE(poll());TEST_ASSERT_TRUE(router.config().directionMapping[1]);
 }
-int main(int,char**) {UNITY_BEGIN();RUN_TEST(parsing_and_persistence);RUN_TEST(shared_serial_dispatch);return UNITY_END();}
+int main(int,char**) {UNITY_BEGIN();RUN_TEST(parsing_and_persistence);RUN_TEST(shared_serial_dispatch);RUN_TEST(nul_keys_are_rejected_without_saving);return UNITY_END();}

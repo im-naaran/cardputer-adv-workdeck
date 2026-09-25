@@ -1,3 +1,7 @@
+import asyncio
+import os
+import sys
+
 import pytest
 
 from adv_helper.os_adapters.codex_app_server import (
@@ -133,3 +137,143 @@ async def test_close_terminates_idle_process():
     await client.read_usage()
     await client.close()
     assert process.terminated
+
+
+class StubbornProcess(FakeProcess):
+    def __init__(self, responses=(), *, exits_on_kill=True):
+        super().__init__(responses)
+        self.exited = asyncio.Event()
+        self.waiting = asyncio.Event()
+        self.killed = False
+        self.exits_on_kill = exits_on_kill
+        self.reaped = False
+
+    def terminate(self):
+        self.terminated = True
+
+    def kill(self):
+        self.killed = True
+        if self.exits_on_kill:
+            self.returncode = -9
+            self.exited.set()
+
+    async def wait(self):
+        self.waiting.set()
+        await self.exited.wait()
+        self.reaped = True
+        return self.returncode
+
+
+@pytest.mark.asyncio
+async def test_cleanup_kills_and_reaps_term_resistant_process():
+    process = StubbornProcess()
+    client = CodexAppServerClient()
+    client._process = process
+    await client._abandon_process(timeout_seconds=0.01)
+    assert process.terminated and process.killed and process.reaped
+    assert client._process is None
+
+
+@pytest.mark.asyncio
+async def test_cleanup_failure_retains_ownership_and_prevents_spawn():
+    process = StubbornProcess(exits_on_kill=False)
+    factory = FakeProcessFactory(FakeProcess([]))
+    client = CodexAppServerClient(process_factory=factory)
+    client._process = process
+    with pytest.raises(CodexUnavailableError, match="cannot reap"):
+        await client._abandon_process(timeout_seconds=0.001)
+    assert client._process is process
+    with pytest.raises(CodexUnavailableError, match="cannot reap"):
+        await client.read_usage()
+    assert factory.calls == 0
+    process.returncode = -9
+    process.exited.set()
+    await client.close()
+    assert process.reaped and client._process is None
+
+
+@pytest.mark.asyncio
+async def test_repeated_cancellation_does_not_interrupt_reaping():
+    process = StubbornProcess()
+    client = CodexAppServerClient()
+    client._process = process
+    task = asyncio.create_task(client.close())
+    await process.waiting.wait()
+    task.cancel()
+    await asyncio.sleep(0)
+    task.cancel()
+    await asyncio.sleep(0)
+    assert not task.done() and client._process is process
+    process.returncode = 0
+    process.exited.set()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert process.reaped and client._process is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('failure', ['stdio', 'eof', 'json', 'timeout', 'write', 'read'])
+async def test_initialization_failures_reap_child(failure):
+    process = StubbornProcess([None] if failure == 'timeout' else [b'invalid'] if failure == 'json' else [])
+    if failure == 'stdio':
+        process.stdin = None
+    elif failure == 'write':
+        def broken_write(data):
+            raise BrokenPipeError
+        process.stdin.write = broken_write
+    elif failure == 'read':
+        async def broken_read():
+            raise OSError('read failed')
+        process.stdout.readline = broken_read
+    client = CodexAppServerClient(timeout_seconds=0.001, process_factory=FakeProcessFactory(process))
+    with pytest.raises((CodexUnavailableError, InvalidCodexResponseError, CodexTimeoutError, OSError)):
+        await client.read_usage()
+    assert process.killed and process.reaped and client._process is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize('during_spawn', [False, True])
+async def test_cancelled_initialization_reaps_child(during_spawn):
+    started, release = asyncio.Event(), asyncio.Event()
+    process = StubbornProcess([None])
+    async def factory():
+        started.set()
+        if during_spawn:
+            await release.wait()
+        return process
+    client = CodexAppServerClient(process_factory=factory)
+    task = asyncio.create_task(client.read_usage())
+    await started.wait()
+    if not during_spawn:
+        while not process.stdin.lines:
+            await asyncio.sleep(0)
+    task.cancel()
+    await asyncio.sleep(0)
+    task.cancel()
+    release.set()
+    with pytest.raises(asyncio.CancelledError):
+        await task
+    assert process.reaped and client._process is None
+
+
+@pytest.mark.asyncio
+async def test_real_term_resistant_child_is_reaped():
+    process = await asyncio.create_subprocess_exec(
+        sys.executable, "-c",
+        "import signal,time; signal.signal(signal.SIGTERM,signal.SIG_IGN); "
+        "print('ready',flush=True); time.sleep(30)",
+        stdout=asyncio.subprocess.PIPE,
+    )
+    client = CodexAppServerClient()
+    client._process = process
+    try:
+        assert await asyncio.wait_for(process.stdout.readline(), 2) == b'ready\n'
+        await client._abandon_process(timeout_seconds=0.05)
+        assert process.returncode == -9
+        with pytest.raises(ProcessLookupError):
+            os.kill(process.pid, 0)
+        assert client._process is None
+    finally:
+        if process.returncode is None:
+            process.kill()
+        await process.wait()

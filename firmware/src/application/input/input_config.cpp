@@ -18,11 +18,12 @@ InputConfigResult parseInputConfig(const std::string& json) {
   }
   // Omitted modules/fields are defaults, never patches of the active configuration.
   for (JsonPair pair : document.as<JsonObject>()) {
+    const std::string key(pair.key().c_str(), pair.key().size());
     size_t index = 0;
-    while (index < 4 && std::strcmp(pair.key().c_str(), kModules[index]) != 0) ++index;
+    while (index < 4 && key != kModules[index]) ++index;
     if (index == 4 || !pair.value().is<JsonObject>()) return result;
     for (JsonPair field : pair.value().as<JsonObject>()) {
-      if (std::strcmp(field.key().c_str(), "directionMapping") != 0 || !field.value().is<bool>()) return result;
+      if (std::string(field.key().c_str(), field.key().size()) != "directionMapping" || !field.value().is<bool>()) return result;
       result.config.directionMapping[index] = field.value().as<bool>();
     }
   }

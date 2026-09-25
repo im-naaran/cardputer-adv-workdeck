@@ -92,6 +92,7 @@ void validation() {
     TEST_ASSERT_FALSE(valid({"s",invalid,"p"}));
     TEST_ASSERT_FALSE(valid({"s","u",invalid}));
   }
+  TEST_ASSERT_TRUE(parseWifiConfig(R"({"ssid\u0000ignored":"n","username":"","password":""})").status==ConfigStatus::kInvalidConfig);
   for (auto json:{"{}","[]","{","{\"ssid\":\"n\",\"username\":null,\"password\":\"\"}",
       "{\"ssid\":\"n\",\"username\":\"\",\"password\":\"\",\"type\":\"personal\"}",
       "{\"ssid\":\"n\",\"username\":\"\",\"password\":\"\"}{}",

@@ -33,6 +33,7 @@ void parsing() {
     TEST_ASSERT_TRUE(result.status==adv::ConfigStatus::kOk);
     TEST_ASSERT_EQUAL(value,result.config.refreshIntervalSeconds);
   }
+  TEST_ASSERT_TRUE(adv::parseCodexConfig(R"({"refreshIntervalSeconds\u0000ignored":300})").status==adv::ConfigStatus::kInvalidConfig);
   for(const auto* value:{"59","3601","true","60.5","\"300\"","null","-1"}) {
     TEST_ASSERT_TRUE(adv::parseCodexConfig(std::string("{\"refreshIntervalSeconds\":")+value+"}").status==adv::ConfigStatus::kInvalidConfig);
   }

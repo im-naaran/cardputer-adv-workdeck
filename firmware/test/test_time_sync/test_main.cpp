@@ -59,6 +59,28 @@ void matching_and_timeout() {
   TEST_ASSERT_FALSE(f.controller.onMessage(old,18001));
   f.finish(18002);
 }
+void response_deadline_is_independent_of_tick_order() {
+  for (uint32_t start : {0u, 0xffffff00u}) {
+    for (uint32_t elapsed : {14999u, 15000u, 15001u}) {
+      Fixture f(start); f.ready(start);
+      const auto response = f.response();
+      const auto now = static_cast<uint32_t>(start + elapsed);
+      TEST_ASSERT_EQUAL(elapsed < 15000, f.controller.onMessage(response, now));
+      TEST_ASSERT_EQUAL(elapsed < 15000, f.time.hasSynced());
+      TEST_ASSERT_TRUE(f.controller.inFlightExecId().empty());
+      if (elapsed >= 15000) {
+        TEST_ASSERT_EQUAL(1, f.cancelled.size());
+        TEST_ASSERT_EQUAL_INT64(0, f.clock.utc);
+        f.tick(now);
+        TEST_ASSERT_EQUAL(1, f.cancelled.size());
+        f.tick(now + 2999); TEST_ASSERT_EQUAL(1, f.sent.size());
+        f.tick(now + 3000); TEST_ASSERT_EQUAL(2, f.sent.size());
+        TEST_ASSERT_FALSE(f.controller.onMessage(response, now + 3001));
+        f.finish(now + 3002);
+      }
+    }
+  }
+}
 void bounded_retries_and_next_round() {
   Fixture f;f.ready();
   TEST_ASSERT_TRUE(f.controller.onMessage(f.response("ERROR"),1));
@@ -140,7 +162,7 @@ void utc_jumps_do_not_schedule_and_shared_ids_are_unique() {
 }
 int main(int,char**) {
   UNITY_BEGIN();
-  RUN_TEST(first_sync_and_success_deadline);RUN_TEST(matching_and_timeout);
+  RUN_TEST(first_sync_and_success_deadline);RUN_TEST(matching_and_timeout);RUN_TEST(response_deadline_is_independent_of_tick_order);
   RUN_TEST(bounded_retries_and_next_round);RUN_TEST(rejected_queue_counts_and_reconnect_recovers);
   RUN_TEST(fresh_reconnect_preserves_deadline_and_expired_reconnect_syncs);
   RUN_TEST(failed_sync_and_computer_switch);RUN_TEST(capability_loss_and_pause);

@@ -93,6 +93,10 @@ void TimeSyncController::tick(uint32_t now) {
 bool TimeSyncController::onMessage(const Message& message, uint32_t now) {
   if (message.event != MessageEvent::kResponse || message.actionId != protocol::kTimeReadAction ||
       inFlight_.empty() || message.execId != inFlight_) return false;
+  if (elapsedMs(now, startedAt_) >= kRequestTimeoutMs) {
+    fail(now);
+    return false;
+  }
   if (message.resultCode != "OK" || !time_.synchronize(message.epochMilliseconds, message.utcOffsetMinutes, now)) {
     fail(now);
     return true;

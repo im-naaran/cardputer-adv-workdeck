@@ -8,6 +8,8 @@ from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from typing import Any, Protocol
 
+from .process_runner import _finish
+
 
 class CodexProviderError(RuntimeError):
     pass
@@ -72,6 +74,8 @@ class ProcessLike(Protocol):
 
     def terminate(self) -> None: ...
 
+    def kill(self) -> None: ...
+
     async def wait(self) -> int: ...
 
 
@@ -115,53 +119,58 @@ class CodexAppServerClient:
         async with self._request_lock:
             started_at = time.monotonic()
             _LOGGER.info("Codex usage query started")
-            await self._ensure_initialized()
-            account_result = await self._rpc("account/read", {"refreshToken": False})
-            account = account_result.get("account") if isinstance(account_result, dict) else None
-            if not isinstance(account, dict) or account.get("type") not in {
-                "chatgpt",
-                "chatgptAuthTokens",
-                "agentIdentity",
-                "personalAccessToken",
-            }:
-                raise NotLoggedInError("Codex ChatGPT login is not available")
-            rate_limits = await self._rpc("account/rateLimits/read")
-            snapshot = normalize_rate_limits(rate_limits, int(self._epoch_clock()))
-            _LOGGER.info(
-                "Codex usage query completed windows=%d durationMs=%d",
-                len(snapshot.windows),
-                round((time.monotonic() - started_at) * 1000),
-            )
-            return snapshot
+            try:
+                await self._ensure_initialized()
+                account_result = await self._rpc("account/read", {"refreshToken": False})
+                account = account_result.get("account") if isinstance(account_result, dict) else None
+                if not isinstance(account, dict) or account.get("type") not in {
+                    "chatgpt",
+                    "chatgptAuthTokens",
+                    "agentIdentity",
+                    "personalAccessToken",
+                }:
+                    raise NotLoggedInError("Codex ChatGPT login is not available")
+                rate_limits = await self._rpc("account/rateLimits/read")
+                snapshot = normalize_rate_limits(rate_limits, int(self._epoch_clock()))
+                _LOGGER.info(
+                    "Codex usage query completed windows=%d durationMs=%d",
+                    len(snapshot.windows),
+                    round((time.monotonic() - started_at) * 1000),
+                )
+                return snapshot
+            except NotLoggedInError:
+                raise
+            except (Exception, asyncio.CancelledError):
+                await self._abandon_process(timeout_seconds=0.2)
+                raise
 
     async def _ensure_initialized(self) -> None:
         if self._process is not None and self._process.returncode is None and self._initialized:
             return
-        self._forget_process()
+        await self._abandon_process(timeout_seconds=0.2)
+        spawning = asyncio.create_task(self._process_factory())
         try:
-            self._process = await self._process_factory()
+            self._process = await asyncio.shield(spawning)
+        except asyncio.CancelledError:
+            self._process = await _finish(spawning)
+            raise
         except (FileNotFoundError, OSError) as error:
             raise CodexUnavailableError("cannot start Codex App Server") from error
         self._next_id = 1
         _LOGGER.info("Codex App Server process started")
         if self._process.stdin is None or self._process.stdout is None:
-            self._forget_process()
             raise CodexUnavailableError("Codex App Server stdio is unavailable")
-        try:
-            await self._rpc(
-                "initialize",
-                {
-                    "clientInfo": {
-                        "name": "cardputer_adv_workdeck",
-                        "title": "Cardputer ADV Workdeck",
-                        "version": "0.1.0",
-                    }
-                },
-            )
-            await self._notify("initialized", {})
-        except Exception:
-            await self._abandon_process(timeout_seconds=0.2)
-            raise
+        await self._rpc(
+            "initialize",
+            {
+                "clientInfo": {
+                    "name": "cardputer_adv_workdeck",
+                    "title": "Cardputer ADV Workdeck",
+                    "version": "0.1.0",
+                }
+            },
+        )
+        await self._notify("initialized", {})
         self._initialized = True
 
     async def _rpc(self, method: str, params: Any = _MISSING) -> dict[str, Any]:
@@ -180,7 +189,6 @@ class CodexAppServerClient:
                 while True:
                     line = await process.stdout.readline()
                     if not line:
-                        self._forget_process()
                         raise CodexUnavailableError("Codex App Server exited")
                     try:
                         response = json.loads(line)
@@ -225,7 +233,6 @@ class CodexAppServerClient:
             if callable(drain):
                 await drain()
         except (BrokenPipeError, ConnectionError, OSError) as error:
-            self._forget_process()
             raise CodexUnavailableError("cannot write to Codex App Server") from error
 
     def _require_process(self) -> ProcessLike:
@@ -239,16 +246,40 @@ class CodexAppServerClient:
 
     async def _abandon_process(self, *, timeout_seconds: float) -> None:
         process = self._process
-        self._forget_process()
-        if process is not None and process.returncode is None:
-            process.terminate()
+        self._initialized = False
+        if process is None:
+            return
+
+        async def reap() -> None:
+            if process.returncode is None:
+                try:
+                    process.terminate()
+                except ProcessLookupError:
+                    pass
             try:
                 await asyncio.wait_for(process.wait(), timeout_seconds)
             except TimeoutError:
-                pass
+                try:
+                    process.kill()
+                except ProcessLookupError:
+                    pass
+                try:
+                    await asyncio.wait_for(process.wait(), timeout_seconds)
+                except TimeoutError as error:
+                    # Keep ownership; a later close/query must retry cleanup before spawning.
+                    raise CodexUnavailableError("cannot reap Codex App Server") from error
+            self._forget_process()
+
+        cleanup = asyncio.create_task(reap())
+        try:
+            await asyncio.shield(cleanup)
+        except asyncio.CancelledError:
+            await _finish(cleanup)
+            raise
 
     async def close(self) -> None:
-        await self._abandon_process(timeout_seconds=2)
+        async with self._request_lock:
+            await self._abandon_process(timeout_seconds=2)
 
 
 def normalize_rate_limits(payload: Any, fetched_at: int) -> UsageSnapshot:
